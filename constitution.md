@@ -1,13 +1,24 @@
-# Project Constitution: NFC Event App
+# Constitución del Proyecto (Reglas y Acuerdos)
 
-## Tech Stack
-- Frontend/Mobile: React Native, TypeScript, React Navigation, Android Studio
-- Local Database: Supabase.
-- State Management: Context API / Redux.
-- Architecture: MVC (Model-View-Controller).
+## 1. Pila Tecnológica (Tech Stack)
+- **Frontend / App Móvil:** React Native, Expo, TypeScript.
+- **Lectura NFC:** `react-native-nfc-manager`.
+- **Almacenamiento Local:** SQLite (recomendado uso de WatermelonDB o PowerSync por su manejo nativo de reactividad y sincronización offline).
+- **Backend (Futuro):** Node.js, PostgreSQL.
 
-## Core Rules
-1. **Offline-First:** Todas las lecturas/escrituras deben hacerse primero en la base de datos local. La sincronización con el backend debe ocurrir en segundo plano cuando haya conexión.
-2. **Strict Typing:** TypeScript estricto. No se permiten `any`. Las interfaces para el modelo de datos (Asistentes, Stands, Sellos) deben estar claramente definidas en la capa Model.
-3. **Hardware Handling:** Los errores de lectura/escritura del hardware NFC deben capturarse y mostrar un feedback claro en la interfaz (View).
-4. **Clean Code:** Aplicar principios SOLID. La lógica de negocio (asignación de puntos, validación de acceso) debe estar separada de los componentes visuales.
+## 2. Metodología y Organización
+- **Marco de Trabajo:** Scrum.
+- **Duración del Sprint:** 2 semanas.
+- **Gestión de Tareas:** GitHub Projects vinculado a las issues del repositorio.
+- **Asignación:** Las tareas de cada Sprint Backlog deben estar estimadas en puntos de historia o tiempo relativo antes de iniciar el Sprint.
+
+## 3. Arquitectura y Código
+- **Patrones de Diseño:** Se priorizará el uso de Arquitectura Hexagonal y Domain-Driven Design (DDD). La lógica de negocio (reglas de gamificación, control de aforo) debe ser agnóstica a React Native.
+- **Tipado:** TypeScript estricto (`"strict": true` en `tsconfig.json`). No se permiten `any`.
+- **Control de Versiones:** Flujo basado en Ramas de Funcionalidad (Feature Branching). 
+  - Nomenclatura: `feature/TASK-XX-breve-descripcion`.
+  - Las integraciones a `main` requieren Pull Request.
+
+## 4. Compromisos de Calidad
+- El código debe ser funcional en modo offline antes de desarrollar la sincronización en la nube.
+- Componentes de UI separados lógicamente de los hooks de persistencia de datos (uso del patrón Model-View-Controller o Presenter).

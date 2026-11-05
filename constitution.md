@@ -1,8 +1,8 @@
 # Project Constitution: NFC Event App
 
 ## Tech Stack
-- Frontend/Mobile: React Native, TypeScript, React Navigation.
-- Local Database: SQLite (via react-native-sqlite-storage o WatermelonDB para sincronización).
+- Frontend/Mobile: React Native, TypeScript, React Navigation, Android Studio
+- Local Database: Supabase.
 - State Management: Context API / Redux.
 - Architecture: MVC (Model-View-Controller).
 

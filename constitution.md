@@ -8,7 +8,7 @@
 
 ## 2. Metodología y Organización
 - **Marco de Trabajo:** Scrum.
-- **Duración del Sprint:** 2 semanas.
+- **Duración del Sprint:** 1 semanas.
 - **Gestión de Tareas:** GitHub Projects vinculado a las issues del repositorio.
 - **Asignación:** Las tareas de cada Sprint Backlog deben estar estimadas en puntos de historia o tiempo relativo antes de iniciar el Sprint.
 

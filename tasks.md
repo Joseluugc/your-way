@@ -1,10 +1,17 @@
-# Implementation Tasks
+# Product Backlog (Fase 1)
 
-- [ ] Task 1: Inicializar proyecto React Native con TypeScript y configurar Eslint/Prettier.
-- [ ] Task 2: Configurar capa del Modelo: Instalar SQLite y definir esquemas de tablas (`User`, `Connection`, `Stamp`).
-- [ ] Task 3: Implementar `SyncManager` para lecturas/escrituras en local mockeando la subida al servidor.
-- [ ] Task 4: Integrar `react-native-nfc-manager` y crear el `NfcController` para leer tags.
-- [ ] Task 5: Crear flujo de UI para añadir un contacto P2P escaneando una pulsera.
-- [ ] Task 6: Implementar lógica de gamificación (registrar Stamp en BBDD local al leer NFC de un stand).
-- [ ] Task 7: Integrar visor de mapas y enlazar los datos de aforo simulados.
-- [ ] Task 8: Refinar UI/UX y añadir opciones de accesibilidad visual.
+## Épica 1: Configuración de Entorno e Infraestructura Móvil
+- [ ] **TASK-01:** Inicializar proyecto React Native con TypeScript.
+- [ ] **TASK-02:** Configurar linters (ESLint, Prettier) y convenciones de código.
+- [ ] **TASK-03:** Instalar y configurar `react-native-nfc-manager` para iOS y Android.
+- [ ] **TASK-04:** Configurar base de datos local orientada a offline-first (ej. SQLite / WatermelonDB).
+
+## Épica 2: Modelado de Dominio y Lógica Base
+- [ ] **TASK-05:** Definir interfaces TypeScript para `User`, `Event`, `NfcTag` y `Stand`.
+- [ ] **TASK-06:** Implementar el repositorio local (Patrón Repository) para operaciones CRUD de usuarios.
+- [ ] **TASK-07:** Crear pantalla básica de "Escáner NFC" que imprima el UID de la pulsera en consola.
+- [ ] **TASK-08:** Crear pantalla de vinculación (Mock UI) para asociar un UID a un User dummy.
+
+## Épica 3: Interfaz de Usuario y Navegación
+- [ ] **TASK-09:** Configurar React Navigation (Tab Navigator para mapa, contactos, perfil).
+- [ ] **TASK-10:** Crear componente de Mapa interactivo (placeholder estático inicial).

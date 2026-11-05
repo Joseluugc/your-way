@@ -1,19 +1,24 @@
-# Technical Plan
+# Hoja de Ruta del Proyecto
 
-## 1. Data Models (Local & Remote)
-- `User`: id, name, company, nfc_tag_id, role, contact_info.
-- `Connection`: user_id, met_user_id, timestamp.
-- `Stand`: id, name, location_x, location_y, current_rating.
-- `Stamp`: user_id, stand_id, timestamp.
-- `Room`: id, name, max_capacity, current_capacity.
+## Fase 1: Arquitectura Base y Entorno (Sprints 1-2)
+- Inicialización del repositorio y configuración de flujos CI/CD.
+- Setup de la aplicación móvil multiplataforma.
+- Diseño del modelo de dominio (Entidades: Evento, Asistente, Pulsera, Estand, Sello).
+- Configuración de la base de datos local y el motor de sincronización.
 
-## 2. Core Services (Controllers)
-- `NfcController`: Wrapper para `react-native-nfc-manager`. Maneja lectura (NDEF) y escritura.
-- `SyncManager`: Hilo en segundo plano que compara el timestamp de la BBDD local con el servidor. Sube `Connections` y `Stamps` pendientes; baja actualizaciones de `Room` (aforo).
-- `MapEngine`: Renderizado del mapa en SVG o canvas, inyectando datos de aforo en tiempo real y aplicando filtros de accesibilidad.
+## Fase 2: Core NFC y Gestión Local (Sprints 3-4)
+- Implementación de la librería de lectura/escritura NFC en la app.
+- Flujo de vinculación de pulsera en puerta (Organizador -> Asistente).
+- Flujo de intercambio de contactos entre asistentes (P2P offline).
+- Guardado persistente en base de datos local.
 
-## 3. UI/Views
-- Pantalla principal (Dashboard/Mapa).
-- Pantalla de Escáner NFC.
-- Libreta de contactos (Networking).
-- Perfil / Pasaporte de gamificación.
+## Fase 3: Gamificación y Control de Aforo (Sprints 5-6)
+- Lógica de "Passport to Prizes" (adquisición de sellos por estand).
+- Sistema de validación de permisos de acceso por zonas.
+- Cálculo de aforo (entradas/salidas) por sala con almacenamiento de eventos de log temporales.
+
+## Fase 4: Sincronización Backend y Analíticas (Sprints 7-8)
+- Desarrollo del servidor central y API REST/GraphQL.
+- Puesta en marcha de la cola de sincronización (resolución de conflictos eventual).
+- Dashboard de estadísticas para organizadores (estands más valorados, aforo máximo).
+- Notificaciones push o en tiempo real (Sockets) para actualizaciones del evento.

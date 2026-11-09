@@ -5,43 +5,44 @@
 **Épica en GitHub Projects:** #Epic-01
 
 ## 1. Descripción Funcional
-Establecer la base de la aplicación móvil en React Native, incluyendo su estructura inicial, la creación y evolución versionada de una base de datos SQLite local y un dashboard de solo lectura para el organizador. El dashboard presentará estadísticas del evento a partir de los datos disponibles localmente: asistentes, actividad en stands, valoraciones, contactos intercambiados y ocupación de zonas. La aplicación deberá iniciar y permitir consultar los últimos datos sincronizados aunque no haya conexión.
+Establecer la aplicación móvil multiplataforma con React Native, Expo y TypeScript estricto, su arquitectura base y la persistencia SQLite offline-first. La lógica de dominio se mantendrá independiente de React Native mediante arquitectura hexagonal y principios DDD, separando la interfaz de usuario de la persistencia. La spec incluye un dashboard de solo lectura para el organizador que resume los datos del evento disponibles localmente: usuarios por rol, sellos y valoraciones por stand, leads y ocupación por zona. La sincronización con el backend Node.js/PostgreSQL pertenece a una fase posterior; el funcionamiento local no dependerá de ella.
 
 ## 2. Historias de Usuario (Tickets para el Sprint)
 
-### [US-01.1] Inicializar la aplicación React Native y la base de datos local
+### [US-01.1] Inicializar la aplicación móvil y su arquitectura
 - **Como** desarrollador del proyecto
-- **Quiero** iniciar la aplicación con una arquitectura organizada y una base SQLite inicializada mediante migraciones
-- **Para** disponer de una base mantenible que persista los datos necesarios para las funcionalidades del evento
+- **Quiero** iniciar una aplicación Expo con React Native y TypeScript estricto, organizada por responsabilidades
+- **Para** disponer de una base multiplataforma mantenible cuya lógica de dominio pueda probarse sin depender de la interfaz
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] La aplicación arranca en iOS y Android y separa presentación, lógica de negocio y acceso a datos.
-- [ ] La inicialización crea la base local de forma segura en el primer arranque y aplica migraciones versionadas sin borrar datos existentes al actualizar.
-- [ ] El esquema local contempla las entidades requeridas de `users`, `stands`, `zones`, `nfc_tags`, `stamps`, `ratings`, `leads` y `access_logs`, conservando sus relaciones, restricciones y valores válidos.
-- [ ] La aplicación puede abrirse sin conexión y conserva los datos locales entre reinicios.
+- [ ] El proyecto usa React Native, Expo y TypeScript con `strict: true`; no introduce tipos `any`.
+- [ ] La estructura separa presentación, dominio y adaptadores de infraestructura, y aplica arquitectura hexagonal/DDD a la lógica de negocio.
+- [ ] La interfaz y los hooks de persistencia quedan separados mediante una organización tipo Presenter o MVC.
+- [ ] La aplicación puede iniciarse en iOS y Android y la lógica de dominio no depende de APIs de React Native.
 
-### [US-01.2] Consultar el dashboard de estadísticas del organizador
+### [US-01.2] Inicializar y persistir el modelo local
+- **Como** desarrollador del proyecto
+- **Quiero** crear y evolucionar una base SQLite local para el modelo del evento
+- **Para** que las funciones principales puedan operar sin conexión y conservar sus datos en el dispositivo
+
+**Criterios de Aceptación (Definition of Done):**
+- [ ] La base local se inicializa de forma idempotente y conserva los datos entre reinicios de la aplicación.
+- [ ] El modelo local contempla `users`, `stands`, `zones`, `nfc_tags`, `stamps`, `ratings`, `leads` y `access_logs`, con sus relaciones, roles, tipos y restricciones definidos en el esquema.
+- [ ] Se preservan, como mínimo, la unicidad de `users.email` y de `(user_id, stand_id)` en `stamps`, la puntuación de `ratings.score` entre 1 y 5 y los valores válidos de los enums.
+- [ ] Las operaciones locales de escritura se ejecutan de forma consistente y la aplicación puede consultar los datos persistidos sin conexión.
+
+### [US-01.3] Consultar el dashboard de estadísticas del organizador
 - **Como** organizador autorizado
 - **Quiero** consultar un resumen de asistencia y actividad del evento
 - **Para** conocer la participación, el rendimiento de los stands y el estado de ocupación de las zonas
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] El dashboard muestra el total de asistentes registrados, el número de sellos por stand, la valoración media por stand, el total de leads y la ocupación actual por zona respecto a su capacidad máxima.
-- [ ] Las métricas se calculan desde las tablas correspondientes (`users`, `stamps`, `ratings`, `leads` y `zones`) y los resultados vacíos se presentan como cero o sin valoración, sin provocar errores.
-- [ ] El dashboard indica cuándo se actualizaron por última vez los datos disponibles y permite mostrar los datos locales cuando no hay conexión.
-- [ ] El acceso al dashboard queda restringido al perfil autorizado; mientras el esquema no incluya un rol `ORGANIZER`, se usa `STAFF` como rol organizador.
-
-### [US-01.3] Consultar estadísticas a partir de datos sincronizados
-- **Como** organizador autorizado
-- **Quiero** que las estadísticas se actualicen al recuperar la conexión
-- **Para** tomar decisiones con datos recientes sin perder el acceso al último resumen disponible durante una desconexión
-
-**Criterios de Aceptación (Definition of Done):**
-- [ ] Cuando existe conexión, la aplicación actualiza los datos locales disponibles y el dashboard vuelve a calcular sus métricas tras completar la actualización.
-- [ ] Si la actualización falla o no hay conexión, los datos previamente almacenados siguen disponibles y se informa de que no están actualizados.
-- [ ] Una actualización interrumpida no deja la base local en un estado parcial o inconsistente.
+- [ ] El dashboard muestra el total de usuarios desglosado por rol, los sellos por stand, la valoración media por stand, el total de leads y la ocupación por zona respecto a `max_capacity`.
+- [ ] Las métricas se calculan desde `users`, `stamps`, `ratings`, `leads` y `zones`; las colecciones vacías se representan sin errores, con cero o sin valoración según corresponda.
+- [ ] El dashboard consulta la información local disponible y presenta un estado vacío cuando todavía no hay datos; no requiere conexión para leer los datos persistidos.
+- [ ] El dashboard solo se muestra dentro del flujo autorizado para organizadores. El esquema actual no define el rol `ORGANIZER`; se deberá acordar si `STAFF` representa temporalmente ese acceso o si se amplía el modelo antes de implementar autorización.
 
 ## 3. Consideraciones Técnicas
 - **Tablas implicadas:** `users`, `stands`, `zones`, `nfc_tags`, `stamps`, `ratings`, `leads`, `access_logs`.
-- **Tecnologías/Librerías:** React Native, TypeScript, SQLite mediante `expo-sqlite` o una alternativa equivalente, migraciones de esquema y NetInfo para detectar conectividad.
-- **Manejo Offline:** La base SQLite es la fuente de lectura local del dashboard. Se conserva la última actualización disponible; al no haber conexión o fallar una actualización, la app sigue funcionando con esos datos e indica su antigüedad. La sincronización debe aplicar los cambios de forma transaccional. La conversión del esquema PostgreSQL a SQLite debe preservar UUID, relaciones, valores enumerados, unicidad de `stamps(user_id, stand_id)` y la restricción de puntuación de `ratings.score`.
+- **Tecnologías/Librerías:** React Native, Expo, TypeScript estricto, SQLite y `react-native-nfc-manager` según la pila acordada. WatermelonDB y PowerSync son alternativas recomendadas por la Constitución para la capa local; la elección entre ellas queda pendiente. El backend futuro será Node.js con PostgreSQL. React Navigation aparece en las tareas de la Fase 1 para la navegación móvil.
+- **Manejo Offline:** La persistencia local debe permitir consultar y conservar los datos sin conexión antes de desarrollar la sincronización en la nube. El dashboard muestra los datos existentes en el dispositivo y un estado vacío si todavía no se han cargado; la sincronización y la frescura respecto al servidor se concretarán en la fase de backend. La adaptación del esquema PostgreSQL a SQLite debe mantener las relaciones, roles, tipos y restricciones que sean aplicables.  

@@ -1,20 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SQLiteProvider } from 'expo-sqlite';
+import OrganizerDashboardScreen from './src/screens/OrganizerDashboardScreen';
+import { initializeDatabase } from './src/database/initializeDatabase';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+    <SQLiteProvider databaseName="your-way.db" onInit={initializeDatabase}>
+      <OrganizerDashboardScreen />
       <StatusBar style="auto" />
-    </View>
+    </SQLiteProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

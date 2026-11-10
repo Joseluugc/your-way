@@ -77,3 +77,54 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_leads_scanned_at ON leads(scanned_at);
   `);
 }
+
+export async function seedDevData(database: SQLiteDatabase): Promise<void> {
+  await database.withTransactionAsync(async () => {
+    await database.execAsync(`
+      INSERT OR IGNORE INTO users (id, name, email, role, company) VALUES
+        ('user-attendee-1', 'Ana Gómez', 'ana@event.com', 'ATTENDEE', NULL),
+        ('user-attendee-2', 'Luis Martín', 'luis@event.com', 'ATTENDEE', NULL),
+        ('user-vip-1', 'María López', 'maria@event.com', 'VIP', NULL),
+        ('user-staff-1', 'Organización Your Way', 'staff@event.com', 'STAFF', 'Your Way'),
+        ('user-exhibitor-1', 'Carlos Ruiz', 'carlos@event.com', 'EXHIBITOR', 'Tech Solutions');
+
+      INSERT OR IGNORE INTO zones (id, name, max_capacity, current_capacity, required_role) VALUES
+        ('zone-auditorium', 'Auditorio Principal', 200, 45, 'ATTENDEE'),
+        ('zone-vip', 'Zona VIP & Lounge', 50, 12, 'VIP');
+
+      INSERT OR IGNORE INTO stands (id, name, owner_id, map_x, map_y) VALUES
+        ('stand-tech', 'Tech Solutions', 'user-exhibitor-1', 10.5, 20.0),
+        ('stand-ai', 'AI & Data Lab', 'user-exhibitor-1', 30.0, 45.0);
+
+      INSERT OR IGNORE INTO nfc_tags (uid, type, user_id, stand_id, zone_id) VALUES
+        ('tag-user-ana', 'USER_WRISTBAND', 'user-attendee-1', NULL, NULL),
+        ('tag-stand-tech', 'STAND_POINT', NULL, 'stand-tech', NULL),
+        ('tag-zone-auditorium', 'ZONE_CHECKPOINT', NULL, NULL, 'zone-auditorium');
+
+      INSERT OR IGNORE INTO stamps (id, user_id, stand_id) VALUES
+        ('stamp-1', 'user-attendee-1', 'stand-tech'),
+        ('stamp-2', 'user-vip-1', 'stand-tech'),
+        ('stamp-3', 'user-attendee-2', 'stand-ai');
+
+      INSERT OR IGNORE INTO ratings (id, user_id, stand_id, score) VALUES
+        ('rating-1', 'user-attendee-1', 'stand-tech', 5),
+        ('rating-2', 'user-vip-1', 'stand-tech', 4),
+        ('rating-3', 'user-attendee-2', 'stand-ai', 5);
+
+      INSERT OR IGNORE INTO leads (id, scanner_user_id, scanned_user_id) VALUES
+        ('lead-1', 'user-exhibitor-1', 'user-attendee-1'),
+        ('lead-2', 'user-exhibitor-1', 'user-vip-1');
+
+      INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action) VALUES
+        ('access-1', 'user-attendee-1', 'zone-auditorium', 'ENTRY'),
+        ('access-2', 'user-vip-1', 'zone-vip', 'ENTRY');
+    `);
+  });
+}
+
+export async function initializeAppDatabase(database: SQLiteDatabase): Promise<void> {
+  await initializeDatabase(database);
+  if (__DEV__) {
+    await seedDevData(database);
+  }
+}

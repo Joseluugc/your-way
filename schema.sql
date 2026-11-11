@@ -79,3 +79,13 @@ CREATE TABLE access_logs (
     action access_action NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 9. Tabla Eventos
+CREATE TABLE eventos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  titulo VARCHAR(200) NOT NULL,
+  fecha_inicio TIMESTAMP NOT NULL,
+  fecha_fin TIMESTAMP NOT NULL,
+  ubicacion VARCHAR(255) NOT NULL,
+  descripcion TEXT
+);

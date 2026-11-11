@@ -72,6 +72,19 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
       timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- FORZAMOS EL BORRADO DE LA TABLA ANTIGUA PARA ACTUALIZAR COLUMNAS
+    DROP TABLE IF EXISTS eventos;
+
+    -- NUEVA TABLA DE EVENTOS
+    CREATE TABLE IF NOT EXISTS eventos (
+      id TEXT PRIMARY KEY NOT NULL,
+      titulo TEXT NOT NULL,
+      fecha_inicio TEXT NOT NULL,
+      fecha_fin TEXT NOT NULL,
+      ubicacion TEXT NOT NULL,
+      descripcion TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_stamps_stand_id ON stamps(stand_id);
     CREATE INDEX IF NOT EXISTS idx_ratings_stand_id ON ratings(stand_id);
     CREATE INDEX IF NOT EXISTS idx_leads_scanned_at ON leads(scanned_at);
@@ -118,6 +131,11 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
       INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action) VALUES
         ('access-1', 'user-attendee-1', 'zone-auditorium', 'ENTRY'),
         ('access-2', 'user-vip-1', 'zone-vip', 'ENTRY');
+
+      -- DATOS DE PRUEBA ACTUALIZADOS PARA EVENTOS
+      INSERT OR IGNORE INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion) VALUES
+        ('evento-1', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Presentación oficial de la plataforma Your Way.'),
+        ('evento-2', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.');
     `);
   });
 }

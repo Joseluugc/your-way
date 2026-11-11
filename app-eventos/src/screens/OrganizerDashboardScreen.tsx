@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -6,6 +7,8 @@ import {
   StyleSheet,
   Text,
   View,
+  Modal,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOrganizerDashboard } from '../hooks/useOrganizerDashboard';
@@ -13,6 +16,7 @@ import type {
   OrganizerDashboardStats,
   UserRole,
 } from '../database/OrganizerDashboardRepository';
+import CreateEventScreen from './CreateEventScreen'; // Importamos tu formulario
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ATTENDEE: 'Asistentes',
@@ -23,6 +27,9 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 export default function OrganizerDashboardScreen() {
   const { stats, loading, error, refresh } = useOrganizerDashboard();
+  
+  // Estado para controlar la visibilidad del modal del formulario
+  const [modalVisible, setModalVisible] = useState(false);
 
   const rankedStands = [...(stats?.stands ?? [])].sort((first, second) => {
     const ratingDifference = (second.averageRating ?? -1) - (first.averageRating ?? -1);
@@ -47,6 +54,15 @@ export default function OrganizerDashboardScreen() {
             <Text style={styles.localLabel}>Datos locales</Text>
           </View>
         </View>
+
+        {/* BOTÓN PARA ABRIR EL FORMULARIO DE EVENTOS */}
+        <TouchableOpacity 
+          style={styles.createButton} 
+          onPress={() => setModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.buttonText}>+ Crear Nuevo Evento</Text>
+        </TouchableOpacity>
 
         {error ? (
           <View style={styles.errorBanner}>
@@ -159,6 +175,30 @@ export default function OrganizerDashboardScreen() {
           </>
         ) : null}
       </ScrollView>
+
+      {/* MODAL QUE CONTIENE EL FORMULARIO DE EVENTOS */}
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalHeader}>
+          <TouchableOpacity onPress={() => setModalVisible(false)}>
+            <Text style={styles.closeText}>Cancelar</Text>
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Nuevo Evento</Text>
+          <View style={{ width: 70 }} />
+        </View>
+        
+        <CreateEventScreen 
+          onClose={() => {
+            setModalVisible(false);
+            // Opcional: Si quieres que las gráficas se actualicen al guardar, puedes llamar a refresh()
+          }} 
+        />
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -213,7 +253,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 10, // Un poco menos de margen para acoplar el botón
   },
   eyebrow: { color: '#56736D', fontSize: 11, fontWeight: '700', letterSpacing: 0.7 },
   title: { color: '#173A35', fontSize: 25, fontWeight: '700', marginTop: 5 },
@@ -227,6 +267,14 @@ const styles = StyleSheet.create({
   },
   localDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 6 },
   localLabel: { color: '#25635A', fontSize: 11, fontWeight: '600' },
+  
+  // ESTILOS NUEVOS PARA EL BOTÓN Y EL MODAL
+  createButton: { backgroundColor: '#167B71', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5EBE8' },
+  closeText: { color: '#167B71', fontSize: 16, fontWeight: '600' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#173A35' },
+  
   errorBanner: {
     backgroundColor: '#FCEBE7',
     borderLeftWidth: 3,

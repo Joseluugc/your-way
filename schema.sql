@@ -90,3 +90,4 @@ CREATE TABLE eventos (
   descripcion TEXT
 );
 // 10. Tabla de Notificaciones
+//Puto joselu la que esta liando con las putas ramas.

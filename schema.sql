@@ -89,3 +89,4 @@ CREATE TABLE eventos (
   ubicacion VARCHAR(255) NOT NULL,
   descripcion TEXT
 );
+// 10. Tabla de Notificaciones

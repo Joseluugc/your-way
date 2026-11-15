@@ -19,7 +19,11 @@ import type { Stand, ZoneOccupancy } from '../domain/map/mapTypes';
 import type { OrganizationAlertType } from '../domain/notifications/organizationAlert';
 
 const VIEW_WIDTH = 1000;
-const VIEW_HEIGHT = 680;
+const BASE_VIEW_HEIGHT = 680;
+const ZONES_TOP = 535;
+const ZONE_ROW_HEIGHT = 70;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
 const ZONE_LEVEL_COLORS = {
   available: '#2A9661',
   medium: '#E89A2C',
@@ -43,24 +47,43 @@ export default function MapScreen() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
+  const [panning, setPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+
+  const zoneCount = snapshot?.zones.length ?? 0;
+  const zoneColumns = Math.min(3, Math.max(1, zoneCount));
+  const viewHeight = Math.max(
+    BASE_VIEW_HEIGHT,
+    ZONES_TOP + Math.ceil(zoneCount / zoneColumns) * ZONE_ROW_HEIGHT + 20,
+  );
+  // The SVG uses the default "meet" aspect ratio, so one uniform scale maps
+  // screen pixels to viewBox units on both axes.
+  const pixelsPerUnit = Math.min(viewport.width / VIEW_WIDTH, viewport.height / viewHeight);
 
   const handlePanGrant = useCallback(() => {
     panStart.current = panRef.current;
+    setPanning(true);
   }, []);
 
   const handlePanMove = useCallback(
     (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
-      const nextPan = {
-        x: panStart.current.x + (gesture.dx * VIEW_WIDTH) / viewport.width,
-        y: panStart.current.y + (gesture.dy * VIEW_HEIGHT) / viewport.height,
-      };
+      const nextPan = clampPan(
+        {
+          x: panStart.current.x + gesture.dx / pixelsPerUnit,
+          y: panStart.current.y + gesture.dy / pixelsPerUnit,
+        },
+        zoomRef.current,
+        viewHeight,
+      );
       panRef.current = nextPan;
       setPan(nextPan);
     },
-    [viewport.height, viewport.width],
+    [pixelsPerUnit, viewHeight],
   );
+
+  const handlePanEnd = useCallback(() => setPanning(false), []);
 
   const panResponder = useMemo(
     () => {
@@ -72,11 +95,14 @@ export default function MapScreen() {
           _event: GestureResponderEvent,
           gesture: PanResponderGestureState,
         ) => Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: handlePanGrant,
         onPanResponderMove: handlePanMove,
+        onPanResponderRelease: handlePanEnd,
+        onPanResponderTerminate: handlePanEnd,
       });
     },
-    [handlePanGrant, handlePanMove],
+    [handlePanGrant, handlePanMove, handlePanEnd],
   );
 
   const stands = useMemo(() => {
@@ -91,40 +117,46 @@ export default function MapScreen() {
     const maxX = Math.max(...validStands.map((stand) => stand.map_x));
     const minY = Math.min(...validStands.map((stand) => stand.map_y));
     const maxY = Math.max(...validStands.map((stand) => stand.map_y));
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
+    const rangeX = maxX - minX;
+    const rangeY = maxY - minY;
 
     return validStands.map((stand) => ({
       stand,
-      x: 100 + ((stand.map_x - minX) / rangeX) * 800,
-      y: 110 + ((stand.map_y - minY) / rangeY) * 340,
+      x: rangeX === 0 ? 500 : 100 + ((stand.map_x - minX) / rangeX) * 800,
+      y: rangeY === 0 ? 280 : 110 + ((stand.map_y - minY) / rangeY) * 340,
     }));
   }, [snapshot?.stands]);
 
   const zoneMarkers = useMemo(() => {
     const zones = snapshot?.zones ?? [];
-    const columns = Math.min(3, Math.max(1, zones.length));
-    const columnWidth = 860 / columns;
+    const columnWidth = 860 / zoneColumns;
 
     return zones.map((zone, index) => ({
       zone,
-      x: 70 + (index % columns) * columnWidth,
-      y: 535 + Math.floor(index / columns) * 70,
+      x: 70 + (index % zoneColumns) * columnWidth,
+      y: ZONES_TOP + Math.floor(index / zoneColumns) * ZONE_ROW_HEIGHT,
       width: Math.min(260, columnWidth - 18),
     }));
-  }, [snapshot?.zones]);
+  }, [snapshot?.zones, zoneColumns]);
 
   const handleZoom = (direction: 1 | -1) => {
-    setZoom((current) => Math.min(3, Math.max(0.5, current + direction * 0.25)));
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom + direction * 0.25));
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+    const nextPan = clampPan(panRef.current, nextZoom, viewHeight);
+    panRef.current = nextPan;
+    setPan(nextPan);
   };
 
-  const timestampLabel = snapshot?.last_synced_at
-    ? new Date(snapshot.last_synced_at).toLocaleString('es-ES')
-    : 'Sin sincronización confirmada';
+  const syncedAt = snapshot?.last_synced_at ? new Date(snapshot.last_synced_at) : null;
+  const timestampLabel =
+    syncedAt && !Number.isNaN(syncedAt.getTime())
+      ? `Aforo en caché · actualizado ${syncedAt.toLocaleString('es-ES')}`
+      : 'Aforo en caché · sin sincronización confirmada';
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!panning}>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>YOUR WAY / RECINTO</Text>
@@ -133,14 +165,14 @@ export default function MapScreen() {
           <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
             <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
             <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
-              {isOffline ? 'Sin conexión' : 'Datos locales'}
+              {isOffline ? 'Sin conexión' : 'Datos en caché'}
             </Text>
           </View>
         </View>
 
         <Text style={styles.syncLabel}>
-          Aforo: {timestampLabel}
-          {isOffline ? ' · último dato guardado' : ''}
+          {timestampLabel}
+          {isOffline ? ' · último dato conocido, no es en tiempo real' : ''}
         </Text>
 
         <View style={styles.mapHeading}>
@@ -183,12 +215,14 @@ export default function MapScreen() {
           <Svg
             accessibilityLabel="Plano 2D interactivo del recinto"
             height="100%"
-            viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+            viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
             width="100%"
             {...panResponder.panHandlers}
           >
-            <Rect fill="#FBFDFC" height={VIEW_HEIGHT} rx="24" width={VIEW_WIDTH} />
-            <G transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
+            <Rect fill="#FBFDFC" height={viewHeight} rx="24" width={VIEW_WIDTH} />
+            <G
+              transform={`translate(${pan.x} ${pan.y}) translate(${VIEW_WIDTH / 2} ${viewHeight / 2}) scale(${zoom}) translate(${-VIEW_WIDTH / 2} ${-viewHeight / 2})`}
+            >
               {Array.from({ length: 19 }, (_, index) => (
                 <Line
                   key={`vertical-${index}`}
@@ -217,6 +251,7 @@ export default function MapScreen() {
               {stands.map(({ stand, x, y }) => (
                 <G key={stand.id}>
                   <Circle
+                    accessible
                     accessibilityLabel={`Estand ${stand.name}. Pulsa para ver la ficha.`}
                     cx={x}
                     cy={y}
@@ -250,6 +285,7 @@ export default function MapScreen() {
               {zoneMarkers.map(({ zone, x, y, width }) => (
                 <G key={zone.zone.id}>
                   <Rect
+                    accessible
                     accessibilityLabel={zoneAccessibilityLabel(zone)}
                     fill={ZONE_LEVEL_COLORS[zone.level]}
                     height="58"
@@ -278,7 +314,9 @@ export default function MapScreen() {
                     x={x + width / 2}
                     y={y + 45}
                   >
-                    {zone.current_capacity} / {zone.zone.max_capacity}
+                    {zone.level === 'unavailable'
+                      ? 'Aforo no disponible'
+                      : `${zone.current_capacity} / ${zone.zone.max_capacity} · ${Math.round(zone.occupancy_percentage ?? 0)} %`}
                   </SvgText>
                 </G>
               ))}
@@ -391,10 +429,12 @@ export default function MapScreen() {
               <>
                 <Text style={styles.sheetEyebrow}>ZONA</Text>
                 <Text style={styles.sheetTitle}>{selectedItem.value.zone.name}</Text>
-                <Text style={styles.sheetDetail}>
-                  Aforo derivado de registros: {selectedItem.value.current_capacity} /{' '}
-                  {selectedItem.value.zone.max_capacity}
-                </Text>
+                {selectedItem.value.level === 'unavailable' ? null : (
+                  <Text style={styles.sheetDetail}>
+                    Aforo derivado de registros: {selectedItem.value.current_capacity} /{' '}
+                    {selectedItem.value.zone.max_capacity}
+                  </Text>
+                )}
                 <Text style={styles.sheetDetail}>
                   {occupancyLabel(selectedItem.value.level)}
                   {selectedItem.value.occupancy_percentage === null
@@ -418,6 +458,19 @@ export default function MapScreen() {
       </Modal>
     </SafeAreaView>
   );
+}
+
+function clampPan(
+  pan: { x: number; y: number },
+  zoom: number,
+  viewHeight: number,
+): { x: number; y: number } {
+  const limitX = (VIEW_WIDTH * zoom) / 2;
+  const limitY = (viewHeight * zoom) / 2;
+  return {
+    x: Math.min(limitX, Math.max(-limitX, pan.x)),
+    y: Math.min(limitY, Math.max(-limitY, pan.y)),
+  };
 }
 
 function LegendItem({ color, label }: { color: string; label: string }) {

@@ -64,3 +64,32 @@ test('never returns negative occupancy and marks invalid maximum capacity unavai
   assert.equal(invalid.occupancy_percentage, null);
   assert.equal(invalid.level, 'unavailable');
 });
+
+test('orders SQLite and ISO timestamps by instant, not by text', () => {
+  const log = (id, action, timestamp) => ({
+    id,
+    user_id: null,
+    zone_id: zone.id,
+    action,
+    timestamp,
+  });
+  // Real order: ENTRY 09:30Z, EXIT 10:00Z, ENTRY 10:30Z. Text order would differ.
+  const logs = [
+    log('b', 'EXIT', '2026-01-01 10:00:00'),
+    log('a', 'ENTRY', '2026-01-01T09:30:00.000Z'),
+    log('c', 'ENTRY', '2026-01-01T10:30:00.000Z'),
+  ];
+
+  assert.equal(calculateZoneOccupancy(zone, logs).current_capacity, 1);
+});
+
+test('puts logs with missing timestamps last and keeps input unchanged', () => {
+  const logs = [
+    { id: 'x', user_id: null, zone_id: zone.id, action: 'EXIT', timestamp: null },
+    { id: 'y', user_id: null, zone_id: zone.id, action: 'ENTRY', timestamp: '2026-01-01T00:00:00.000Z' },
+  ];
+  const snapshot = logs.map((entry) => entry.id);
+
+  assert.equal(calculateZoneOccupancy(zone, logs).current_capacity, 0);
+  assert.deepEqual(logs.map((entry) => entry.id), snapshot);
+});

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   OrganizerDashboardRepository,
@@ -24,7 +24,6 @@ export function useOrganizerDashboard() {
     let active = true;
     const repository = new OrganizerDashboardRepository(database);
 
-    setState((current) => ({ ...current, loading: true, error: null }));
     void repository
       .getStats()
       .then((stats) => {
@@ -47,8 +46,10 @@ export function useOrganizerDashboard() {
     };
   }, [database, reloadVersion]);
 
-  return {
-    ...state,
-    refresh: () => setReloadVersion((version) => version + 1),
-  };
+  const refresh = useCallback(() => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    setReloadVersion((version) => version + 1);
+  }, []);
+
+  return { ...state, refresh };
 }

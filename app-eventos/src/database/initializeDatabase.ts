@@ -78,7 +78,8 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
       fecha_inicio TEXT NOT NULL,
       fecha_fin TEXT NOT NULL,
       ubicacion TEXT NOT NULL,
-      descripcion TEXT
+      descripcion TEXT,
+      CHECK (fecha_fin > fecha_inicio)
     );
 
     CREATE TABLE IF NOT EXISTS local_sync_state (
@@ -101,6 +102,7 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_leads_scanned_at ON leads(scanned_at);
     CREATE INDEX IF NOT EXISTS idx_access_logs_zone_timestamp ON access_logs(zone_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_cached_notifications_created_at ON cached_notifications(created_at);
+    CREATE INDEX IF NOT EXISTS idx_eventos_fecha_inicio ON eventos(fecha_inicio);
   `);
 }
 

@@ -72,10 +72,6 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
       timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- FORZAMOS EL BORRADO DE LA TABLA ANTIGUA PARA ACTUALIZAR COLUMNAS
-    DROP TABLE IF EXISTS eventos;
-
-    -- NUEVA TABLA DE EVENTOS
     CREATE TABLE IF NOT EXISTS eventos (
       id TEXT PRIMARY KEY NOT NULL,
       titulo TEXT NOT NULL,
@@ -85,9 +81,26 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
       descripcion TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS local_sync_state (
+      scope TEXT PRIMARY KEY NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS cached_notifications (
+      id TEXT PRIMARY KEY NOT NULL,
+      type TEXT NOT NULL
+        CHECK (type IN ('ORGANIZATION', 'SCHEDULE_CHANGE', 'CAPACITY_OPEN', 'CAPACITY_CLOSE')),
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      zone_id TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_stamps_stand_id ON stamps(stand_id);
     CREATE INDEX IF NOT EXISTS idx_ratings_stand_id ON ratings(stand_id);
     CREATE INDEX IF NOT EXISTS idx_leads_scanned_at ON leads(scanned_at);
+    CREATE INDEX IF NOT EXISTS idx_access_logs_zone_timestamp ON access_logs(zone_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_cached_notifications_created_at ON cached_notifications(created_at);
   `);
 }
 

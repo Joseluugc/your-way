@@ -12,10 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOrganizerDashboard } from '../hooks/useOrganizerDashboard';
-import type {
-  OrganizerDashboardStats,
-  UserRole,
-} from '../database/OrganizerDashboardRepository';
+import type { UserRole } from '../database/OrganizerDashboardRepository';
 import CreateEventScreen from './CreateEventScreen'; // Importamos tu formulario
 
 const ROLE_LABELS: Record<UserRole, string> = {

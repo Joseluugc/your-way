@@ -1,0 +1,5 @@
+# Claude Code: ajustes personales de cada desarrollador
+**/.claude/settings.local.json
+
+# Worktrees aislados creados por la skill "worktree"
+.trees/

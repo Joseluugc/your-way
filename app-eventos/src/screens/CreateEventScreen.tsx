@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import {
-  View,
   Text,
   TextInput,
   StyleSheet,
-  Alert,
   ScrollView,
   TouchableOpacity,
-  Platform,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { insertEvent, getEventos } from '../database/eventQueries';
+import DateTimeField from '../components/DateTimeField';
+import { showMessage } from '../utils/dialogs';
+import { insertEvent, getEventos, generateEventId, type Evento } from '../database/eventQueries';
 
 export default function CreateEventScreen({ onClose }: { onClose?: () => void }) {
   const db = useSQLiteContext();
@@ -71,35 +68,28 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
     setShowPickerHoraInicio(false);
   };
 
-  const onDateInicioChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowPickerFechaInicio(false);
-    if (selectedDate) {
-      setDateInicioObj(selectedDate);
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const year = selectedDate.getFullYear();
-      setTextFechaInicio(`${day}/${month}/${year}`); } };  const onDateFinChange = (event: any, selectedDate?: Date) => { if (Platform.OS === 'android') setShowPickerFechaFin(false); if (selectedDate) { setDateFinObj(selectedDate); const day = String(selectedDate.getDate()).padStart(2, '0'); const month = String(selectedDate.getMonth() + 1).padStart(2, '0'); const year = selectedDate.getFullYear(); setTextFechaFin(`${day}/${month}/${year}`);
-    }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatFecha = (d: Date) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const formatHora = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  const onDateInicioChange = (selectedDate: Date) => {
+    setDateInicioObj(selectedDate);
+    setTextFechaInicio(formatFecha(selectedDate));
   };
 
-  const onStartTimeChange = (event: any, selectedTime?: Date) => {
-    if (Platform.OS === 'android') setShowPickerHoraInicio(false);
-    if (selectedTime) {
-      setStartTimeObj(selectedTime);
-      const hours = String(selectedTime.getHours()).padStart(2, '0');
-      const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
-      setTextHoraInicio(`${hours}:${minutes}`);
-    }
+  const onDateFinChange = (selectedDate: Date) => {
+    setDateFinObj(selectedDate);
+    setTextFechaFin(formatFecha(selectedDate));
   };
 
-  const onEndTimeChange = (event: any, selectedTime?: Date) => {
-    if (Platform.OS === 'android') setShowPickerHoraFin(false);
-    if (selectedTime) {
-      setEndTimeObj(selectedTime);
-      const hours = String(selectedTime.getHours()).padStart(2, '0');
-      const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
-      setTextHoraFin(`${hours}:${minutes}`);
-    }
+  const onStartTimeChange = (selectedTime: Date) => {
+    setStartTimeObj(selectedTime);
+    setTextHoraInicio(formatHora(selectedTime));
+  };
+
+  const onEndTimeChange = (selectedTime: Date) => {
+    setEndTimeObj(selectedTime);
+    setTextHoraFin(formatHora(selectedTime));
   };
 
   const parseDateTimeToISO = (dateStr: string, timeStr: string) => {
@@ -112,7 +102,7 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
   const handleGuardarEvento = async () => {
     cerrarTodosLosPickers();
     if (!titulo.trim() || !ubicacion.trim()) {
-      Alert.alert('Campos incompletos', 'Por favor, rellena el título y la ubicación.');
+      showMessage('Campos incompletos', 'Por favor, rellena el título y la ubicación.');
       return;
     }
 
@@ -120,29 +110,29 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
     const endDateTime = parseDateTimeToISO(textFechaFin, textHoraFin);
 
     if (!startDateTime || !endDateTime) {
-      Alert.alert('Formato incorrecto', 'Usa el formato DD/MM/YYYY para la fecha y HH:MM para la hora.');
+      showMessage('Formato incorrecto', 'Usa el formato DD/MM/YYYY para la fecha y HH:MM para la hora.');
       return;
     }
 
     if (startDateTime >= endDateTime) {
-      Alert.alert('Error de horario', 'La fecha y hora de fin debe ser posterior a la de inicio.');
+      showMessage('Error de horario', 'La fecha y hora de fin debe ser posterior a la de inicio.');
       return;
     }
 
-    const nuevoEvento = {
-      id: Date.now().toString(),
+    const nuevoEvento: Evento = {
+      id: generateEventId(),
       titulo: titulo.trim(),
       fecha_inicio: startDateTime.toISOString(),
       fecha_fin: endDateTime.toISOString(),
       ubicacion: ubicacion.trim(),
       // Aquí aplicamos la limpieza de la descripción:
-      descripcion: descripcion.trim().replace(/\n+/g, ' - '), 
+      descripcion: descripcion.trim().replace(/\n+/g, ' - ') || null,
     };
 
     try {
       await insertEvent(db, nuevoEvento);
 
-      const eventosEnBaseDeDatos = await getEventos(db) as any[];
+      const eventosEnBaseDeDatos = await getEventos(db);
       console.log('\n--- BBDD ACTUALIZADA: TABLA EVENTOS ---');
       
       const eventosFormateados = eventosEnBaseDeDatos.map((ev) => {
@@ -172,17 +162,16 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
       console.log(JSON.stringify(eventosFormateados, null, 2));
       console.log('---------------------------------------\n');
 
-      Alert.alert('Éxito', 'Evento guardado correctamente.');
+      showMessage('Éxito', 'Evento guardado correctamente.');
       if (onClose) onClose();
     } catch (error) {
       console.error('Error al guardar:', error);
-      Alert.alert('Error', 'Hubo un problema al guardar el evento.');
+      showMessage('Error', 'Hubo un problema al guardar el evento.');
     }
   };
 
   return (
-    <TouchableWithoutFeedback onPress={cerrarTodosLosPickers}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionHeader}>Información General</Text>
 
         <Text style={styles.label}>Título del evento *</Text>
@@ -195,37 +184,49 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
           placeholderTextColor="#91A19B"
         />
 
-        <Text style={styles.label}>Fecha de inicio *</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={abrirFechaInicio}>
-          <View pointerEvents="none">
-            <TextInput style={styles.input} value={textFechaInicio} placeholder="DD/MM/YYYY" placeholderTextColor="#91A19B" />
-          </View>
-        </TouchableOpacity>
-        {showPickerFechaInicio && <DateTimePicker value={dateInicioObj} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateInicioChange} />}
+        <DateTimeField
+          label="Fecha de inicio *"
+          mode="date"
+          value={dateInicioObj}
+          displayText={textFechaInicio}
+          open={showPickerFechaInicio}
+          onOpen={abrirFechaInicio}
+          onClose={() => setShowPickerFechaInicio(false)}
+          onChange={onDateInicioChange}
+        />
 
-        <Text style={styles.label}>Fecha de fin *</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={abrirFechaFin}>
-          <View pointerEvents="none">
-            <TextInput style={styles.input} value={textFechaFin} placeholder="DD/MM/YYYY" placeholderTextColor="#91A19B" />
-          </View>
-        </TouchableOpacity>
-        {showPickerFechaFin && <DateTimePicker value={dateFinObj} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateFinChange} />}
+        <DateTimeField
+          label="Fecha de fin *"
+          mode="date"
+          value={dateFinObj}
+          displayText={textFechaFin}
+          open={showPickerFechaFin}
+          onOpen={abrirFechaFin}
+          onClose={() => setShowPickerFechaFin(false)}
+          onChange={onDateFinChange}
+        />
 
-        <Text style={styles.label}>Hora de inicio *</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={abrirHoraInicio}>
-          <View pointerEvents="none">
-            <TextInput style={styles.input} value={textHoraInicio} placeholder="HH:MM" placeholderTextColor="#91A19B" />
-          </View>
-        </TouchableOpacity>
-        {showPickerHoraInicio && <DateTimePicker value={startTimeObj} mode="time" is24Hour={true} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onStartTimeChange} />}
+        <DateTimeField
+          label="Hora de inicio *"
+          mode="time"
+          value={startTimeObj}
+          displayText={textHoraInicio}
+          open={showPickerHoraInicio}
+          onOpen={abrirHoraInicio}
+          onClose={() => setShowPickerHoraInicio(false)}
+          onChange={onStartTimeChange}
+        />
 
-        <Text style={styles.label}>Hora de fin *</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={abrirHoraFin}>
-          <View pointerEvents="none">
-            <TextInput style={styles.input} value={textHoraFin} placeholder="HH:MM" placeholderTextColor="#91A19B" />
-          </View>
-        </TouchableOpacity>
-        {showPickerHoraFin && <DateTimePicker value={endTimeObj} mode="time" is24Hour={true} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onEndTimeChange} />}
+        <DateTimeField
+          label="Hora de fin *"
+          mode="time"
+          value={endTimeObj}
+          displayText={textHoraFin}
+          open={showPickerHoraFin}
+          onOpen={abrirHoraFin}
+          onClose={() => setShowPickerHoraFin(false)}
+          onChange={onEndTimeChange}
+        />
 
         <Text style={styles.sectionHeader}>Ubicación y Detalles</Text>
 
@@ -254,8 +255,7 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
         <TouchableOpacity style={styles.submitButton} onPress={handleGuardarEvento} activeOpacity={0.8}>
           <Text style={styles.submitButtonText}>Guardar Evento</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </TouchableWithoutFeedback>
+    </ScrollView>
   );
 }
 

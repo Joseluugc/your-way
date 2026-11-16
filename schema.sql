@@ -80,14 +80,19 @@ CREATE TABLE access_logs (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 9. Tabla Eventos
+-- 9. Tabla Eventos (agenda del evento; espejo de la tabla local SQLite `eventos`)
 CREATE TABLE eventos (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  titulo VARCHAR(200) NOT NULL,
-  fecha_inicio TIMESTAMP NOT NULL,
-  fecha_fin TIMESTAMP NOT NULL,
-  ubicacion VARCHAR(255) NOT NULL,
-  descripcion TEXT
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    titulo VARCHAR(200) NOT NULL,
+    fecha_inicio TIMESTAMPTZ NOT NULL,
+    fecha_fin TIMESTAMPTZ NOT NULL,
+    ubicacion VARCHAR(255) NOT NULL,
+    descripcion TEXT,
+    CONSTRAINT eventos_rango_fechas CHECK (fecha_fin > fecha_inicio)
 );
-// 10. Tabla de Notificaciones
-//Puto joselu la que esta liando con las putas ramas.
+
+CREATE INDEX idx_eventos_fecha_inicio ON eventos(fecha_inicio);
+
+-- 10. Tabla de Notificaciones
+-- Pendiente: el contrato de notificaciones lo define la Spec 03 (tipo, contenido,
+-- zona relacionada y fecha). En local se cachean en `cached_notifications`.

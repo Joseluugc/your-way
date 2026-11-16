@@ -20,8 +20,8 @@ export default function RootLayout() {
             tabBarInactiveTintColor: '#71827D',
           }}
         >
-          <Tabs.Screen name="index" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
-          <Tabs.Screen name="dashboard" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
+          <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
+          <Tabs.Screen name="mapa" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
         </Tabs>
       </NotificationProvider>
     </SQLiteProvider>

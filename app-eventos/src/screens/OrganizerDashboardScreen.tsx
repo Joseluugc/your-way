@@ -12,6 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOrganizerDashboard } from '../hooks/useOrganizerDashboard';
+import { useEventos } from '../hooks/useEventos';
+import type { Evento } from '../database/eventQueries';
+import { confirmAction, showMessage } from '../utils/dialogs';
 import type { UserRole } from '../database/OrganizerDashboardRepository';
 import CreateEventScreen from './CreateEventScreen'; // Importamos tu formulario
 
@@ -24,6 +27,20 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 export default function OrganizerDashboardScreen() {
   const { stats, loading, error, refresh } = useOrganizerDashboard();
+  const eventosState = useEventos();
+
+  const confirmarBorrado = (evento: Evento) => {
+    confirmAction('Eliminar evento', `¿Seguro que quieres eliminar "${evento.titulo}"?`, 'Eliminar', () => {
+      eventosState.remove(evento.id).catch(() => {
+        showMessage('Error', 'No se pudo eliminar el evento.');
+      });
+    });
+  };
+
+  const refrescarTodo = () => {
+    refresh();
+    eventosState.refresh();
+  };
   
   // Estado para controlar la visibilidad del modal del formulario
   const [modalVisible, setModalVisible] = useState(false);
@@ -38,7 +55,7 @@ export default function OrganizerDashboardScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={loading && stats !== null} onRefresh={refresh} tintColor="#167B71" />
+          <RefreshControl refreshing={loading && stats !== null} onRefresh={refrescarTodo} tintColor="#167B71" />
         }
       >
         <View style={styles.header}>
@@ -60,6 +77,31 @@ export default function OrganizerDashboardScreen() {
         >
           <Text style={styles.buttonText}>+ Crear Nuevo Evento</Text>
         </TouchableOpacity>
+
+        <SectionHeading title="Eventos programados" detail="Guardados en la base local · mantén pulsado para eliminar" />
+        {eventosState.error ? (
+          <EmptyPanel text={eventosState.error} />
+        ) : eventosState.loading && eventosState.eventos.length === 0 ? (
+          <ActivityIndicator color="#167B71" />
+        ) : eventosState.eventos.length > 0 ? (
+          <View style={styles.listSurface}>
+            {eventosState.eventos.map((evento, index) => (
+              <Pressable
+                key={evento.id}
+                accessibilityRole="button"
+                accessibilityHint="Mantén pulsado para eliminar el evento"
+                onLongPress={() => confirmarBorrado(evento)}
+                style={[styles.eventRow, index === eventosState.eventos.length - 1 && styles.lastRow]}
+              >
+                <Text numberOfLines={1} style={styles.rowTitle}>{evento.titulo}</Text>
+                <Text style={styles.rowDetail}>{formatearRango(evento)}</Text>
+                <Text numberOfLines={1} style={styles.rowDetail}>{evento.ubicacion}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <EmptyPanel text="Todavía no hay eventos. Crea el primero con el botón de arriba." />
+        )}
 
         {error ? (
           <View style={styles.errorBanner}>
@@ -191,13 +233,22 @@ export default function OrganizerDashboardScreen() {
         <CreateEventScreen 
           onClose={() => {
             setModalVisible(false);
-            // Opcional: Si quieres que las gráficas se actualicen al guardar, puedes llamar a refresh()
           }} 
         />
       </Modal>
 
     </SafeAreaView>
   );
+}
+
+function formatearRango(evento: Evento): string {
+  const inicio = new Date(evento.fecha_inicio);
+  const fin = new Date(evento.fecha_fin);
+  const fecha = (d: Date) => d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+  const hora = (d: Date) => d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  return fecha(inicio) === fecha(fin)
+    ? `${fecha(inicio)} · ${hora(inicio)} – ${hora(fin)}`
+    : `${fecha(inicio)} ${hora(inicio)} – ${fecha(fin)} ${hora(fin)}`;
 }
 
 function Metric({ label, value, tone }: { label: string; value: number; tone: MetricTone }) {
@@ -321,6 +372,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5EBE8',
   },
   lastRow: { borderBottomWidth: 0 },
+  eventRow: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5EBE8',
+  },
   standIdentity: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
   rank: { width: 29, color: '#91A19B', fontSize: 12, fontWeight: '700' },
   standCopy: { flex: 1 },

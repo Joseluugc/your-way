@@ -1,12 +1,30 @@
 import type { AccessLog, OccupancyLevel, Zone, ZoneOccupancy } from './mapTypes';
 
+// SQLite CURRENT_TIMESTAMP ("YYYY-MM-DD HH:MM:SS", UTC) and ISO 8601 strings
+// do not sort correctly as text, so compare parsed instants. Missing or invalid
+// timestamps sort last.
+function timestampValue(timestamp: string | null): number {
+  if (!timestamp) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(timestamp)
+    ? `${timestamp.replace(' ', 'T')}Z`
+    : timestamp;
+  const value = Date.parse(normalized);
+  return Number.isNaN(value) ? Number.POSITIVE_INFINITY : value;
+}
+
 export function calculateZoneOccupancy(zone: Zone, logs: AccessLog[]): ZoneOccupancy {
   const zoneLogs = logs
     .filter((log) => log.zone_id === zone.id)
-    .slice()
     .sort((first, second) => {
-      const timestampOrder = (first.timestamp ?? '').localeCompare(second.timestamp ?? '');
-      return timestampOrder || first.id.localeCompare(second.id);
+      const firstTime = timestampValue(first.timestamp);
+      const secondTime = timestampValue(second.timestamp);
+      if (firstTime !== secondTime) {
+        return firstTime < secondTime ? -1 : 1;
+      }
+      return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
     });
 
   const currentCapacity = zoneLogs.reduce((capacity, log) => {

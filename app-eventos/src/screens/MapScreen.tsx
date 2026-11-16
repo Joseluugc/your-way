@@ -210,6 +210,7 @@ export default function MapScreen() {
               height: Math.max(event.nativeEvent.layout.height, 1),
             })
           }
+          {...panResponder.panHandlers}
           style={styles.mapFrame}
         >
           <Svg
@@ -217,7 +218,6 @@ export default function MapScreen() {
             height="100%"
             viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
             width="100%"
-            {...panResponder.panHandlers}
           >
             <Rect fill="#FBFDFC" height={viewHeight} rx="24" width={VIEW_WIDTH} />
             <G

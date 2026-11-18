@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { addDatabaseChangeListener, useSQLiteContext } from 'expo-sqlite';
 import { deleteEvent, getEventos, type Evento } from '../database/eventQueries';
+import { useSync } from '../providers/SyncProvider';
 
 interface EventosState {
   eventos: Evento[];
@@ -14,6 +15,7 @@ interface EventosState {
  */
 export function useEventos() {
   const database = useSQLiteContext();
+  const { requestSync } = useSync();
   const [reloadVersion, setReloadVersion] = useState(0);
   const [state, setState] = useState<EventosState>({ eventos: [], loading: true, error: null });
 
@@ -52,7 +54,13 @@ export function useEventos() {
     setReloadVersion((version) => version + 1);
   }, []);
 
-  const remove = useCallback((id: string) => deleteEvent(database, id), [database]);
+  const remove = useCallback(
+    async (id: string) => {
+      await deleteEvent(database, id);
+      requestSync();
+    },
+    [database, requestSync],
+  );
 
   return { ...state, refresh, remove };
 }

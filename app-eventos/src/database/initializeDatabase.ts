@@ -106,6 +106,39 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
   `);
 }
 
+const SEED_EVENTO_1_ID = '00000000-0000-4000-8000-000000000001';
+const SEED_EVENTO_2_ID = '00000000-0000-4000-8000-000000000002';
+
+/**
+ * Migraciones versionadas con `PRAGMA user_version`: la posición en el array + 1 es la versión.
+ * Nunca se edita una migración ya publicada; se añade una nueva al final.
+ */
+const MIGRATIONS: string[] = [
+  // 1: columnas de sincronización de `eventos` (Spec 07). Las filas existentes quedan pendientes.
+  `
+    ALTER TABLE eventos ADD COLUMN updated_at TEXT;
+    ALTER TABLE eventos ADD COLUMN deleted_at TEXT;
+    ALTER TABLE eventos ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (sync_status IN ('pending', 'synced'));
+    UPDATE eventos SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+    -- Los IDs del seed antiguo no son UUID válidos para Postgres.
+    UPDATE eventos SET id = '${SEED_EVENTO_1_ID}' WHERE id = 'evento-1';
+    UPDATE eventos SET id = '${SEED_EVENTO_2_ID}' WHERE id = 'evento-2';
+  `,
+];
+
+async function runMigrations(database: SQLiteDatabase): Promise<void> {
+  const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  const current = row?.user_version ?? 0;
+
+  for (let version = current; version < MIGRATIONS.length; version += 1) {
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(MIGRATIONS[version]);
+      await database.execAsync(`PRAGMA user_version = ${version + 1}`);
+    });
+  }
+}
+
 export async function seedDevData(database: SQLiteDatabase): Promise<void> {
   await database.withTransactionAsync(async () => {
     await database.execAsync(`
@@ -148,15 +181,16 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
         ('access-2', 'user-vip-1', 'zone-vip', 'ENTRY');
 
       -- DATOS DE PRUEBA ACTUALIZADOS PARA EVENTOS
-      INSERT OR IGNORE INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion) VALUES
-        ('evento-1', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Presentación oficial de la plataforma Your Way.'),
-        ('evento-2', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.');
+      INSERT OR IGNORE INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at) VALUES
+        ('${SEED_EVENTO_1_ID}', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Presentación oficial de la plataforma Your Way.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        ('${SEED_EVENTO_2_ID}', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `);
   });
 }
 
 export async function initializeAppDatabase(database: SQLiteDatabase): Promise<void> {
   await initializeDatabase(database);
+  await runMigrations(database);
   if (__DEV__) {
     await seedDevData(database);
   }

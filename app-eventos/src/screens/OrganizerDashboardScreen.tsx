@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOrganizerDashboard } from '../hooks/useOrganizerDashboard';
 import { useEventos } from '../hooks/useEventos';
+import { useSync } from '../providers/SyncProvider';
 import type { Evento } from '../database/eventQueries';
 import { confirmAction, showMessage } from '../utils/dialogs';
 import type { UserRole } from '../database/OrganizerDashboardRepository';
@@ -28,6 +29,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 export default function OrganizerDashboardScreen() {
   const { stats, loading, error, refresh } = useOrganizerDashboard();
   const eventosState = useEventos();
+  const { lastSyncedAt } = useSync();
 
   const confirmarBorrado = (evento: Evento) => {
     confirmAction('Eliminar evento', `¿Seguro que quieres eliminar "${evento.titulo}"?`, 'Eliminar', () => {
@@ -62,6 +64,11 @@ export default function OrganizerDashboardScreen() {
           <View>
             <Text style={styles.eyebrow}>YOUR WAY / ORGANIZACIÓN</Text>
             <Text style={styles.title}>Resumen del evento</Text>
+            <Text style={styles.syncLabel}>
+              {lastSyncedAt
+                ? `Última sincronización: ${lastSyncedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                : 'Sin sincronizar'}
+            </Text>
           </View>
           <View style={styles.localBadge}>
             <View style={styles.localDot} />
@@ -96,6 +103,9 @@ export default function OrganizerDashboardScreen() {
                 <Text numberOfLines={1} style={styles.rowTitle}>{evento.titulo}</Text>
                 <Text style={styles.rowDetail}>{formatearRango(evento)}</Text>
                 <Text numberOfLines={1} style={styles.rowDetail}>{evento.ubicacion}</Text>
+                {evento.sync_status === 'pending' && (
+                  <Text style={styles.pendingLabel}>Pendiente de sincronizar</Text>
+                )}
               </Pressable>
             ))}
           </View>
@@ -315,6 +325,8 @@ const styles = StyleSheet.create({
   },
   localDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 6 },
   localLabel: { color: '#25635A', fontSize: 11, fontWeight: '600' },
+  syncLabel: { color: '#7A8A85', fontSize: 11, marginTop: 4 },
+  pendingLabel: { color: '#B77B1F', fontSize: 11, fontWeight: '600', marginTop: 4 },
   
   // ESTILOS NUEVOS PARA EL BOTÓN Y EL MODAL
   createButton: { backgroundColor: '#167B71', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },

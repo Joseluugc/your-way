@@ -2,7 +2,7 @@
 
 **Owner:** @joseluu.gc
 **Rama:** `Joselu`
-**Estado:** 📝 Borrador
+**Estado:** 📝 Implementado
 **Depende de:** Spec 01 (arquitectura base y SQLite local)
 **Fecha:** 2026-11-16
 **Objetivo:** Sincronizar la tabla `eventos` entre SQLite y Supabase en ambos sentidos, sin perder el funcionamiento sin conexión.

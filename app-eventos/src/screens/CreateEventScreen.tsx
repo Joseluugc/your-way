@@ -9,10 +9,12 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import DateTimeField from '../components/DateTimeField';
 import { showMessage } from '../utils/dialogs';
-import { insertEvent, getEventos, generateEventId, type Evento } from '../database/eventQueries';
+import { insertEvent, getEventos, generateEventId, type NuevoEvento } from '../database/eventQueries';
+import { useSync } from '../providers/SyncProvider';
 
 export default function CreateEventScreen({ onClose }: { onClose?: () => void }) {
   const db = useSQLiteContext();
+  const { requestSync } = useSync();
 
   const [titulo, setTitulo] = useState('');
   const [ubicacion, setUbicacion] = useState('');
@@ -119,7 +121,7 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
       return;
     }
 
-    const nuevoEvento: Evento = {
+    const nuevoEvento: NuevoEvento = {
       id: generateEventId(),
       titulo: titulo.trim(),
       fecha_inicio: startDateTime.toISOString(),
@@ -131,6 +133,7 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
 
     try {
       await insertEvent(db, nuevoEvento);
+      requestSync();
 
       const eventosEnBaseDeDatos = await getEventos(db);
       console.log('\n--- BBDD ACTUALIZADA: TABLA EVENTOS ---');

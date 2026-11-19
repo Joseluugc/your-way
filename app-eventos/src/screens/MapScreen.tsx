@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import {
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,7 @@ import EventMapCanvas, {
   getOccupancyFreshnessLabel,
   type OccupancyDataSource,
 } from '../components/EventMapCanvas';
+import NotificationCenter from '../components/NotificationCenter';
 import {
   MAP_MOCK_STANDS,
   MAP_MOCK_ACCESS_LOGS,
@@ -19,7 +22,6 @@ import {
 import { calculateZoneOccupancy } from '../domain/map/calculateZoneOccupancy';
 import { useMapData } from '../hooks/useMapData';
 import { useEventNotifications } from '../providers/NotificationProvider';
-import type { OrganizationAlertType } from '../domain/notifications/organizationAlert';
 
 const MAP_MOCK_ZONE_OCCUPANCIES = MAP_MOCK_ZONES.map((zone) =>
   calculateZoneOccupancy(zone, MAP_MOCK_ACCESS_LOGS),
@@ -28,12 +30,21 @@ const MAP_MOCK_ZONE_OCCUPANCIES = MAP_MOCK_ZONES.map((zone) =>
 export default function MapScreen() {
   const { snapshot, loading, error, isOffline, refresh } = useMapData();
   const {
-    alerts,
+    notifications,
+    unreadCount,
     permissionState,
+    isOnline,
+    canSimulate,
     error: notificationError,
     requestPermission,
+    openSettings,
+    markRead,
+    markAllRead,
+    simulateNotification,
   } = useEventNotifications();
   const [panning, setPanning] = useState(false);
+  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
+  const [permissionRationaleVisible, setPermissionRationaleVisible] = useState(false);
   const hasMapData = Boolean(snapshot && (snapshot.stands.length > 0 || snapshot.zones.length > 0));
   const showMockData = __DEV__ && !loading && !error && !hasMapData;
   const occupancyDataSource: OccupancyDataSource = showMockData ? 'demo' : 'cache';
@@ -42,7 +53,13 @@ export default function MapScreen() {
   const mapZones = showMockData
     ? MAP_MOCK_ZONE_OCCUPANCIES
     : (snapshot?.zones ?? []);
+  const notificationZones = mapZones.map((occupancy) => occupancy.zone);
   const timestampLabel = getOccupancyFreshnessLabel(occupancyDataSource, lastUpdatedAt);
+
+  const continuePermissionRequest = () => {
+    setPermissionRationaleVisible(false);
+    void requestPermission();
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -52,11 +69,28 @@ export default function MapScreen() {
             <Text style={styles.eyebrow}>YOUR WAY / RECINTO</Text>
             <Text style={styles.title}>Mapa y aforo</Text>
           </View>
-          <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
-            <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
-            <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
-            {isOffline ? 'Sin conexión' : showMockData ? 'Datos de ejemplo' : 'Datos en caché'}
-            </Text>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Abrir centro de avisos. ${unreadCount} sin leer`}
+              onPress={() => setNotificationCenterVisible(true)}
+              style={styles.bellButton}
+            >
+              <Text style={styles.bellIcon}>🔔</Text>
+              {unreadCount > 0 ? (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
+              <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
+              <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
+                {isOffline ? 'Sin conexión' : showMockData ? 'Datos de ejemplo' : 'Datos en caché'}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -92,47 +126,64 @@ export default function MapScreen() {
                 Organización, cambios de horario y alertas de aforo.
               </Text>
             </View>
-            {permissionState !== 'granted' ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void requestPermission()}
-                style={styles.enableButton}
-              >
-                <Text style={styles.enableButtonText}>Activar avisos</Text>
-              </Pressable>
-            ) : (
-              <Text style={styles.permissionEnabled}>Permiso activo</Text>
-            )}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setNotificationCenterVisible(true)}
+              style={styles.viewNotificationsButton}
+            >
+              <Text style={styles.viewNotificationsText}>
+                Ver avisos{unreadCount > 0 ? ` (${unreadCount})` : ''}
+              </Text>
+            </Pressable>
           </View>
+
           <Text style={styles.permissionHint}>
-            Solo se solicitará permiso al activar. Si lo deniegas, los avisos guardados seguirán
-            disponibles en esta pantalla.
+            Los avisos ya recibidos quedan guardados y se pueden consultar sin conexión.
+            {!isOnline ? ' No se reciben ni simulan avisos nuevos en modo offline.' : ''}
           </Text>
-          {permissionState === 'denied' ? (
-            <Text style={styles.warningText}>
-              Las notificaciones del sistema están desactivadas; los avisos in-app siguen disponibles.
-            </Text>
-          ) : null}
-          {permissionState === 'unavailable' ? (
-            <Text style={styles.warningText}>
-              Las notificaciones del sistema no están disponibles en esta plataforma.
-            </Text>
-          ) : null}
-          {notificationError ? <Text style={styles.warningText}>{notificationError}</Text> : null}
-          {alerts.length > 0 ? (
-            <View style={styles.alertList}>
-              {alerts.slice(0, 5).map((alert) => (
-                <View key={alert.id} style={styles.alertItem}>
-                  <Text style={styles.alertType}>{alertTypeLabel(alert.type)}</Text>
-                  <Text style={styles.alertTitle}>{alert.title}</Text>
-                  <Text style={styles.alertMessage}>{alert.message}</Text>
-                  <Text style={styles.alertDate}>{formatDate(alert.created_at)}</Text>
-                </View>
-              ))}
+
+          {permissionState === 'granted' ? (
+            <Text style={styles.permissionEnabled}>Notificaciones del sistema activas.</Text>
+          ) : permissionState === 'denied' ? (
+            <View>
+              <Text style={styles.warningText}>
+                Las notificaciones del sistema están desactivadas. Los avisos in-app y el historial
+                siguen disponibles.
+              </Text>
+              <View style={styles.permissionActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPermissionRationaleVisible(true)}
+                  style={styles.enableButton}
+                >
+                  <Text style={styles.enableButtonText}>Reintentar</Text>
+                </Pressable>
+                {Platform.OS !== 'web' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void openSettings()}
+                    style={styles.settingsButton}
+                  >
+                    <Text style={styles.settingsButtonText}>Abrir ajustes</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
+          ) : permissionState === 'unavailable' ? (
+            <Text style={styles.warningText}>
+              Las notificaciones del sistema no están disponibles en esta plataforma; los avisos
+              in-app siguen funcionando.
+            </Text>
           ) : (
-            <Text style={styles.mutedText}>Todavía no se han recibido avisos.</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPermissionRationaleVisible(true)}
+              style={styles.enableButton}
+            >
+              <Text style={styles.enableButtonText}>Activar avisos del sistema</Text>
+            </Pressable>
           )}
+          {notificationError ? <Text style={styles.warningText}>{notificationError}</Text> : null}
         </View>
 
         <Text style={styles.dataNote}>
@@ -141,26 +192,56 @@ export default function MapScreen() {
         </Text>
       </ScrollView>
 
+      <NotificationCenter
+        visible={notificationCenterVisible}
+        notifications={notifications}
+        zones={notificationZones}
+        unreadCount={unreadCount}
+        isOnline={isOnline}
+        canSimulate={canSimulate}
+        permissionState={permissionState}
+        error={notificationError}
+        onClose={() => setNotificationCenterVisible(false)}
+        onMarkRead={markRead}
+        onMarkAllRead={markAllRead}
+        onSimulate={simulateNotification}
+      />
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setPermissionRationaleVisible(false)}
+        transparent
+        visible={permissionRationaleVisible}
+      >
+        <View style={styles.rationaleBackdrop}>
+          <View style={styles.rationaleCard}>
+            <Text style={styles.rationaleTitle}>¿Para qué sirven los avisos?</Text>
+            <Text style={styles.rationaleText}>
+              Te informan de comunicaciones de la organización, cambios de horario y alertas de
+              aforo. El permiso permite mostrar notificaciones del sistema cuando la app está en
+              segundo plano. Los avisos in-app y el historial seguirán disponibles si lo deniegas.
+            </Text>
+            <View style={styles.rationaleActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPermissionRationaleVisible(false)}
+                style={styles.cancelButton}
+              >
+                <Text style={styles.cancelButtonText}>Ahora no</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={continuePermissionRequest}
+                style={styles.enableButton}
+              >
+                <Text style={styles.enableButtonText}>Continuar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
-}
-
-function alertTypeLabel(type: OrganizationAlertType): string {
-  switch (type) {
-    case 'ORGANIZATION':
-      return 'ORGANIZACIÓN';
-    case 'SCHEDULE_CHANGE':
-      return 'CAMBIO DE HORARIO';
-    case 'CAPACITY_OPEN':
-      return 'AFORO ABIERTO';
-    case 'CAPACITY_CLOSE':
-      return 'AFORO CERRADO';
-  }
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es-ES');
 }
 
 const styles = StyleSheet.create({
@@ -172,20 +253,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 70,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   eyebrow: { color: '#56736D', fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
   title: { color: '#173A35', fontSize: 25, fontWeight: '700', marginTop: 4 },
+  bellButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E3EBE7',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 42,
+  },
+  bellIcon: { fontSize: 17 },
+  unreadBadge: {
+    position: 'absolute',
+    right: -5,
+    top: -5,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: '#C94F43',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  unreadBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '700' },
   networkBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E2EFEB',
     borderRadius: 16,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 7,
   },
   offlineBadge: { backgroundColor: '#FFF0D7' },
-  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 6 },
+  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 5 },
   offlineDot: { backgroundColor: '#C78219' },
-  networkLabel: { color: '#25635A', fontSize: 11, fontWeight: '600' },
+  networkLabel: { color: '#25635A', fontSize: 10, fontWeight: '600' },
   offlineLabel: { color: '#825510' },
   syncLabel: { color: '#71827D', fontSize: 11, marginTop: 4, marginBottom: 16 },
   sectionTitle: { color: '#173A35', fontSize: 17, fontWeight: '700' },
@@ -200,7 +306,6 @@ const styles = StyleSheet.create({
   errorText: { color: '#7D322B', fontSize: 12 },
   retryButton: { alignSelf: 'flex-start', marginTop: 8 },
   retryText: { color: '#913C32', fontSize: 12, fontWeight: '700' },
-  mutedText: { color: '#6E817C', fontSize: 12, marginTop: 8 },
   notificationCard: {
     padding: 15,
     backgroundColor: '#FFFFFF',
@@ -211,21 +316,44 @@ const styles = StyleSheet.create({
   },
   notificationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   notificationCopy: { flex: 1 },
+  viewNotificationsButton: {
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: '#E2EFEB',
+  },
+  viewNotificationsText: { color: '#167B71', fontSize: 11, fontWeight: '700' },
+  permissionEnabled: { color: '#167B71', fontSize: 11, fontWeight: '700', marginTop: 8 },
+  permissionHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 9 },
+  warningText: { color: '#8B5C13', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  permissionActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   enableButton: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 9,
     backgroundColor: '#167B71',
   },
   enableButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  permissionEnabled: { color: '#167B71', fontSize: 10, fontWeight: '700' },
-  permissionHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 9 },
-  warningText: { color: '#8B5C13', fontSize: 11, lineHeight: 16, marginTop: 8 },
-  alertList: { marginTop: 11 },
-  alertItem: { borderTopWidth: 1, borderTopColor: '#E7EEEA', paddingVertical: 10 },
-  alertType: { color: '#167B71', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
-  alertTitle: { color: '#243E39', fontSize: 13, fontWeight: '700', marginTop: 3 },
-  alertMessage: { color: '#526B63', fontSize: 11, lineHeight: 16, marginTop: 3 },
-  alertDate: { color: '#87958F', fontSize: 9, marginTop: 4 },
+  settingsButton: {
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 9,
+    borderColor: '#CBD8D2',
+    borderWidth: 1,
+  },
+  settingsButtonText: { color: '#526B63', fontSize: 11, fontWeight: '700' },
   dataNote: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 13 },
+  rationaleBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(13, 35, 31, 0.5)',
+    padding: 22,
+  },
+  rationaleCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
+  rationaleTitle: { color: '#173A35', fontSize: 18, fontWeight: '700' },
+  rationaleText: { color: '#526B63', fontSize: 13, lineHeight: 20, marginTop: 9 },
+  rationaleActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 9, marginTop: 18 },
+  cancelButton: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  cancelButtonText: { color: '#526B63', fontSize: 11, fontWeight: '700' },
 });

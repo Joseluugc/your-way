@@ -4,18 +4,23 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Notifications from 'expo-notifications';
-import { AndroidImportance } from 'expo-notifications';
-import { AlertRepository } from '../database/AlertRepository';
+import * as Linking from 'expo-linking';
+import { useNetworkState } from 'expo-network';
+import { NotificationRepository } from '../database/NotificationRepository';
 import {
-  isOrganizationAlertType,
-  type OrganizationAlert,
-} from '../domain/notifications/organizationAlert';
+  acceptIncomingEventNotification,
+  createDemoEventNotification,
+  filterAndSortEventNotifications,
+  type EventNotification,
+  type EventNotificationType,
+} from '../domain/notifications/eventNotification';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
@@ -28,66 +33,96 @@ if (Platform.OS !== 'web') {
   });
 }
 
-type PermissionState = 'unknown' | 'granted' | 'denied' | 'unavailable';
+export type NotificationPermissionState = 'unknown' | 'granted' | 'denied' | 'unavailable';
 
 interface NotificationContextValue {
-  alerts: OrganizationAlert[];
-  banner: OrganizationAlert | null;
-  permissionState: PermissionState;
+  notifications: EventNotification[];
+  unreadCount: number;
+  banner: EventNotification | null;
+  permissionState: NotificationPermissionState;
+  isOnline: boolean;
+  canSimulate: boolean;
   error: string | null;
   requestPermission: () => Promise<boolean>;
+  openSettings: () => Promise<void>;
   dismissBanner: () => void;
-  publishAlert: (alert: OrganizationAlert) => Promise<void>;
+  markRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
+  simulateNotification: (
+    type: EventNotificationType,
+    relatedZoneId?: string | null,
+  ) => Promise<boolean>;
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
 export function NotificationProvider({ children }: PropsWithChildren) {
   const database = useSQLiteContext();
-  const [alerts, setAlerts] = useState<OrganizationAlert[]>([]);
-  const [banner, setBanner] = useState<OrganizationAlert | null>(null);
-  const [permissionState, setPermissionState] = useState<PermissionState>(
+  const networkState = useNetworkState();
+  const isOnline =
+    networkState.isConnected === true && networkState.isInternetReachable !== false;
+  const [notifications, setNotifications] = useState<EventNotification[]>([]);
+  const [banner, setBanner] = useState<EventNotification | null>(null);
+  const [permissionState, setPermissionState] = useState<NotificationPermissionState>(
     Platform.OS === 'web' ? 'unavailable' : 'unknown',
   );
   const [error, setError] = useState<string | null>(null);
+  const knownIds = useRef(new Set<string>());
 
-  const persistAlert = useCallback(
-    async (alert: OrganizationAlert) => {
-      await new AlertRepository(database).save(alert);
-      setAlerts((current) => [
-        alert,
-        ...current.filter((savedAlert) => savedAlert.id !== alert.id),
-      ]);
-      setBanner(alert);
+  const storeNotification = useCallback(
+    async (notification: EventNotification) => {
+      if (knownIds.current.has(notification.id)) {
+        return;
+      }
+
+      knownIds.current.add(notification.id);
+      try {
+        await new NotificationRepository(database).save(notification);
+      } catch (saveError: unknown) {
+        knownIds.current.delete(notification.id);
+        throw saveError;
+      }
+
+      setNotifications((current) =>
+        filterAndSortEventNotifications([
+          notification,
+          ...current.filter((saved) => saved.id !== notification.id),
+        ]),
+      );
+      setBanner(notification);
       setError(null);
     },
     [database],
   );
 
-  const receiveNotification = useCallback(
-    async (notification: Notifications.Notification) => {
-      const content = notification.request.content;
-      const data: unknown = content.data;
-      if (!isRecord(data) || !isOrganizationAlertType(data.type)) {
-        return;
-      }
-
-      const alert = parseAlert(data, content.title, content.body, notification.date, notification.request.identifier);
-      if (alert) {
-        await persistAlert(alert);
+  const receiveNotificationData = useCallback(
+    async (data: unknown) => {
+      const notification = acceptIncomingEventNotification(data, isOnline);
+      if (notification) {
+        await storeNotification(notification);
       }
     },
-    [persistAlert],
+    [isOnline, storeNotification],
   );
 
   useEffect(() => {
     let active = true;
-    const repository = new AlertRepository(database);
+    const repository = new NotificationRepository(database);
+
     void repository
       .getLatest()
-      .then((savedAlerts) => {
+      .then((savedNotifications) => {
         if (active) {
-          setAlerts(savedAlerts);
+          savedNotifications.forEach((notification) => knownIds.current.add(notification.id));
+          setNotifications((current) =>
+            filterAndSortEventNotifications([
+              ...savedNotifications,
+              ...current.filter(
+                (notification) =>
+                  !savedNotifications.some((saved) => saved.id === notification.id),
+              ),
+            ]),
+          );
         }
       })
       .catch((loadError: unknown) => {
@@ -105,7 +140,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     void Notifications.getPermissionsAsync()
       .then(({ status }) => {
         if (active) {
-          setPermissionState(status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'unknown');
+          setPermissionState(
+            status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'unknown',
+          );
         }
       })
       .catch((permissionError: unknown) => {
@@ -114,17 +151,42 @@ export function NotificationProvider({ children }: PropsWithChildren) {
         }
       });
 
-    const subscription = Notifications.addNotificationReceivedListener((notification) => {
-      void receiveNotification(notification).catch((receiveError: unknown) => {
-        setError(errorMessage(receiveError, 'No se pudo guardar el aviso recibido.'));
-      });
+    const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+      void receiveNotificationData(notification.request.content.data).catch(
+        (receiveError: unknown) => {
+          setError(errorMessage(receiveError, 'No se pudo guardar el aviso recibido.'));
+        },
+      );
     });
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        void receiveNotificationData(response.notification.request.content.data).catch(
+          (receiveError: unknown) => {
+            setError(errorMessage(receiveError, 'No se pudo guardar el aviso abierto.'));
+          },
+        );
+      },
+    );
+
+    void Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          return receiveNotificationData(response.notification.request.content.data);
+        }
+        return undefined;
+      })
+      .catch((receiveError: unknown) => {
+        if (active) {
+          setError(errorMessage(receiveError, 'No se pudo recuperar el aviso abierto.'));
+        }
+      });
 
     return () => {
       active = false;
-      subscription.remove();
+      receivedSubscription.remove();
+      responseSubscription.remove();
     };
-  }, [database, receiveNotification]);
+  }, [database, receiveNotificationData]);
 
   const requestPermission = useCallback(async () => {
     if (Platform.OS === 'web') {
@@ -133,13 +195,6 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     }
 
     try {
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('event-updates', {
-          name: 'Avisos del evento',
-          importance: AndroidImportance.HIGH,
-        });
-      }
-
       const current = await Notifications.getPermissionsAsync();
       const result =
         current.status === 'granted' ? current : await Notifications.requestPermissionsAsync();
@@ -148,46 +203,122 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       setError(null);
       return granted;
     } catch (permissionError: unknown) {
-      setPermissionState('unavailable');
+      setPermissionState('unknown');
       setError(errorMessage(permissionError, 'No se pudo activar el permiso de notificaciones.'));
       return false;
     }
   }, []);
 
-  const publishAlert = useCallback(
-    async (alert: OrganizationAlert) => {
-      await persistAlert(alert);
+  const openSettings = useCallback(async () => {
+    try {
+      await Linking.openSettings();
+    } catch (settingsError: unknown) {
+      setError(errorMessage(settingsError, 'No se pudieron abrir los ajustes del sistema.'));
+    }
+  }, []);
 
-      if (permissionState === 'granted') {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: alert.title,
-            body: alert.message,
-            data: {
-              id: alert.id,
-              type: alert.type,
-              zone_id: alert.zone_id,
-              created_at: alert.created_at,
-            },
-          },
-          trigger: null,
-        });
+  const markRead = useCallback(
+    async (id: string) => {
+      try {
+        await new NotificationRepository(database).markRead(id);
+        setNotifications((current) =>
+          current.map((notification) =>
+            notification.id === id ? { ...notification, is_read: true } : notification,
+          ),
+        );
+        setError(null);
+      } catch (markError: unknown) {
+        setError(errorMessage(markError, 'No se pudo marcar el aviso como leído.'));
       }
     },
-    [permissionState, persistAlert],
+    [database],
   );
 
+  const markAllRead = useCallback(async () => {
+    try {
+      await new NotificationRepository(database).markAllRead();
+      setNotifications((current) =>
+        current.map((notification) => ({ ...notification, is_read: true })),
+      );
+      setError(null);
+    } catch (markError: unknown) {
+      setError(errorMessage(markError, 'No se pudieron marcar los avisos como leídos.'));
+    }
+  }, [database]);
+
+  const simulateNotification = useCallback(
+    async (type: EventNotificationType, relatedZoneId?: string | null) => {
+      if (!__DEV__ || !isOnline) {
+        return false;
+      }
+
+      const notification = createDemoEventNotification(
+        type,
+        {
+          id: createUuidV4(),
+          received_at: new Date().toISOString(),
+          related_zone_id: relatedZoneId,
+        },
+        isOnline,
+      );
+      if (!notification) {
+        return false;
+      }
+
+      try {
+        await storeNotification(notification);
+        if (permissionState === 'granted' && Platform.OS !== 'web') {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: notification.title,
+              body: notification.content,
+              data: { ...notification },
+            },
+            trigger: null,
+          });
+        }
+        return true;
+      } catch (simulationError: unknown) {
+        setError(errorMessage(simulationError, 'No se pudo simular el aviso.'));
+        return false;
+      }
+    },
+    [isOnline, permissionState, storeNotification],
+  );
+
+  const unreadCount = useMemo(
+    () => notifications.reduce((count, notification) => count + (notification.is_read ? 0 : 1), 0),
+    [notifications],
+  );
   const contextValue = useMemo<NotificationContextValue>(
     () => ({
-      alerts,
+      notifications,
+      unreadCount,
       banner,
       permissionState,
+      isOnline,
+      canSimulate: __DEV__ && isOnline,
       error,
       requestPermission,
+      openSettings,
       dismissBanner: () => setBanner(null),
-      publishAlert,
+      markRead,
+      markAllRead,
+      simulateNotification,
     }),
-    [alerts, banner, permissionState, error, requestPermission, publishAlert],
+    [
+      notifications,
+      unreadCount,
+      banner,
+      permissionState,
+      isOnline,
+      error,
+      requestPermission,
+      openSettings,
+      markRead,
+      markAllRead,
+      simulateNotification,
+    ],
   );
 
   return (
@@ -198,7 +329,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
           <View accessibilityLiveRegion="polite" style={styles.banner}>
             <View style={styles.bannerCopy}>
               <Text style={styles.bannerTitle}>{banner.title}</Text>
-              <Text numberOfLines={2} style={styles.bannerMessage}>{banner.message}</Text>
+              <Text numberOfLines={2} style={styles.bannerMessage}>{banner.content}</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -224,44 +355,19 @@ export function useEventNotifications(): NotificationContextValue {
   return context;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseAlert(
-  data: Record<string, unknown>,
-  notificationTitle: string | null,
-  notificationBody: string | null,
-  notificationDate: number,
-  notificationId: string,
-): OrganizationAlert | null {
-  const type = data.type;
-  const title = typeof data.title === 'string' ? data.title : notificationTitle;
-  const message =
-    typeof data.message === 'string'
-      ? data.message
-      : typeof data.body === 'string'
-        ? data.body
-        : notificationBody;
-
-  if (!isOrganizationAlertType(type) || !title || !message) {
-    return null;
+function createUuidV4(): string {
+  const cryptoApi = (globalThis as {
+    crypto?: { randomUUID?: () => string };
+  }).crypto;
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID();
   }
 
-  const zoneId = data.zone_id;
-  const timestamp = data.created_at;
-
-  return {
-    id: typeof data.id === 'string' ? data.id : notificationId,
-    type,
-    title,
-    message,
-    zone_id: typeof zoneId === 'string' ? zoneId : null,
-    created_at:
-      typeof timestamp === 'string'
-        ? timestamp
-        : new Date(notificationDate * 1000).toISOString(),
-  };
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const randomValue = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? randomValue : (randomValue & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 function errorMessage(error: unknown, fallback: string): string {

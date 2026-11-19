@@ -101,7 +101,6 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_ratings_stand_id ON ratings(stand_id);
     CREATE INDEX IF NOT EXISTS idx_leads_scanned_at ON leads(scanned_at);
     CREATE INDEX IF NOT EXISTS idx_access_logs_zone_timestamp ON access_logs(zone_id, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_cached_notifications_created_at ON cached_notifications(created_at);
     CREATE INDEX IF NOT EXISTS idx_eventos_fecha_inicio ON eventos(fecha_inicio);
   `);
 }
@@ -124,6 +123,46 @@ const MIGRATIONS: string[] = [
     -- Los IDs del seed antiguo no son UUID válidos para Postgres.
     UPDATE eventos SET id = '${SEED_EVENTO_1_ID}' WHERE id = 'evento-1';
     UPDATE eventos SET id = '${SEED_EVENTO_2_ID}' WHERE id = 'evento-2';
+  `,
+  // 2: adapta la caché de avisos al contrato EventNotification conservando el histórico.
+  `
+    ALTER TABLE cached_notifications RENAME TO cached_notifications_legacy;
+
+    CREATE TABLE cached_notifications (
+      id TEXT PRIMARY KEY NOT NULL,
+      type TEXT NOT NULL
+        CHECK (type IN ('ORGANIZATION_NOTICE', 'SCHEDULE_CHANGE', 'CAPACITY_ALERT')),
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      related_zone_id TEXT REFERENCES zones(id) ON DELETE SET NULL,
+      received_at TEXT NOT NULL,
+      is_read INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1))
+    );
+
+    INSERT INTO cached_notifications (
+      id, type, title, content, related_zone_id, received_at, is_read
+    )
+    SELECT
+      legacy.id,
+      CASE legacy.type
+        WHEN 'ORGANIZATION' THEN 'ORGANIZATION_NOTICE'
+        WHEN 'SCHEDULE_CHANGE' THEN 'SCHEDULE_CHANGE'
+        WHEN 'CAPACITY_OPEN' THEN 'CAPACITY_ALERT'
+        WHEN 'CAPACITY_CLOSE' THEN 'CAPACITY_ALERT'
+      END,
+      legacy.title,
+      legacy.message,
+      CASE
+        WHEN EXISTS (SELECT 1 FROM zones WHERE zones.id = legacy.zone_id) THEN legacy.zone_id
+        ELSE NULL
+      END,
+      legacy.created_at,
+      0
+    FROM cached_notifications_legacy AS legacy;
+
+    DROP TABLE cached_notifications_legacy;
+    CREATE INDEX idx_cached_notifications_received_at
+      ON cached_notifications(received_at, id);
   `,
 ];
 

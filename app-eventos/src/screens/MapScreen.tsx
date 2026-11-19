@@ -1,158 +1,130 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
-  PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
-  type GestureResponderEvent,
-  type PanResponderGestureState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, G, Line, Rect, Text as SvgText } from 'react-native-svg';
+import { useSQLiteContext } from 'expo-sqlite';
+import EventMapCanvas, {
+  getOccupancyFreshnessLabel,
+} from '../components/EventMapCanvas';
+import { MapRepository } from '../database/MapRepository';
+import { createOrUpdateStand } from '../domain/map/manageStand';
+import type { Stand, UserRole } from '../domain/map/mapTypes';
+import NotificationCenter from '../components/NotificationCenter';
 import { useMapData } from '../hooks/useMapData';
 import { useEventNotifications } from '../providers/NotificationProvider';
-import type { Stand, ZoneOccupancy } from '../domain/map/mapTypes';
-import type { OrganizationAlertType } from '../domain/notifications/organizationAlert';
 
-const VIEW_WIDTH = 1000;
-const BASE_VIEW_HEIGHT = 680;
-const ZONES_TOP = 535;
-const ZONE_ROW_HEIGHT = 70;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 3;
-const ZONE_LEVEL_COLORS = {
-  available: '#2A9661',
-  medium: '#E89A2C',
-  full: '#D84F4F',
-  unavailable: '#8B9691',
-} as const;
-
-type SelectedMapItem =
-  | { kind: 'stand'; value: Stand }
-  | { kind: 'zone'; value: ZoneOccupancy };
+interface StandDraft {
+  id?: string;
+  name: string;
+  ownerId: string;
+  map_x: number | null;
+  map_y: number | null;
+}
 
 export default function MapScreen() {
-  const { snapshot, loading, error, isOffline, refresh } = useMapData();
+  const database = useSQLiteContext();
   const {
-    alerts,
+    snapshot,
+    events,
+    activeEventId,
+    setActiveEventId,
+    loading,
+    error,
+    syncError,
+    syncStatus,
+    isOffline,
+    refresh,
+  } = useMapData();
+  const {
+    notifications,
+    unreadCount,
     permissionState,
+    isOnline,
+    canSimulate,
     error: notificationError,
     requestPermission,
+    openSettings,
+    markRead,
+    markAllRead,
+    simulateNotification,
   } = useEventNotifications();
-  const [selectedItem, setSelectedItem] = useState<SelectedMapItem | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [viewport, setViewport] = useState({ width: 1, height: 1 });
   const [panning, setPanning] = useState(false);
-  const panStart = useRef({ x: 0, y: 0 });
-  const panRef = useRef({ x: 0, y: 0 });
-  const zoomRef = useRef(1);
+  const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
+  const [permissionRationaleVisible, setPermissionRationaleVisible] = useState(false);
+  const [activeRole, setActiveRole] = useState<UserRole>('ATTENDEE');
+  const [standDraft, setStandDraft] = useState<StandDraft | null>(null);
+  const [placingStandLocation, setPlacingStandLocation] = useState(false);
+  const [standFormError, setStandFormError] = useState<string | null>(null);
+  const [savingStand, setSavingStand] = useState(false);
+  const lastUpdatedAt = snapshot?.last_synced_at ?? null;
+  const mapStands = snapshot?.stands ?? [];
+  const mapZones = snapshot?.zones ?? [];
+  const notificationZones = mapZones.map((occupancy) => occupancy.zone);
+  const timestampLabel = getOccupancyFreshnessLabel('cache', lastUpdatedAt);
 
-  const zoneCount = snapshot?.zones.length ?? 0;
-  const zoneColumns = Math.min(3, Math.max(1, zoneCount));
-  const viewHeight = Math.max(
-    BASE_VIEW_HEIGHT,
-    ZONES_TOP + Math.ceil(zoneCount / zoneColumns) * ZONE_ROW_HEIGHT + 20,
-  );
-  // The SVG uses the default "meet" aspect ratio, so one uniform scale maps
-  // screen pixels to viewBox units on both axes.
-  const pixelsPerUnit = Math.min(viewport.width / VIEW_WIDTH, viewport.height / viewHeight);
-
-  const handlePanGrant = useCallback(() => {
-    panStart.current = panRef.current;
-    setPanning(true);
-  }, []);
-
-  const handlePanMove = useCallback(
-    (_event: GestureResponderEvent, gesture: PanResponderGestureState) => {
-      const nextPan = clampPan(
-        {
-          x: panStart.current.x + gesture.dx / pixelsPerUnit,
-          y: panStart.current.y + gesture.dy / pixelsPerUnit,
-        },
-        zoomRef.current,
-        viewHeight,
-      );
-      panRef.current = nextPan;
-      setPan(nextPan);
-    },
-    [pixelsPerUnit, viewHeight],
-  );
-
-  const handlePanEnd = useCallback(() => setPanning(false), []);
-
-  const panResponder = useMemo(
-    () => {
-      // PanResponder invokes these callbacks on gesture events, not during render.
-      // eslint-disable-next-line react-hooks/refs
-      return PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (
-          _event: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: handlePanGrant,
-        onPanResponderMove: handlePanMove,
-        onPanResponderRelease: handlePanEnd,
-        onPanResponderTerminate: handlePanEnd,
-      });
-    },
-    [handlePanGrant, handlePanMove, handlePanEnd],
-  );
-
-  const stands = useMemo(() => {
-    const validStands = snapshot?.stands.filter(
-      (stand) => Number.isFinite(stand.map_x) && Number.isFinite(stand.map_y),
-    ) ?? [];
-    if (validStands.length === 0) {
-      return [];
-    }
-
-    const minX = Math.min(...validStands.map((stand) => stand.map_x));
-    const maxX = Math.max(...validStands.map((stand) => stand.map_x));
-    const minY = Math.min(...validStands.map((stand) => stand.map_y));
-    const maxY = Math.max(...validStands.map((stand) => stand.map_y));
-    const rangeX = maxX - minX;
-    const rangeY = maxY - minY;
-
-    return validStands.map((stand) => ({
-      stand,
-      x: rangeX === 0 ? 500 : 100 + ((stand.map_x - minX) / rangeX) * 800,
-      y: rangeY === 0 ? 280 : 110 + ((stand.map_y - minY) / rangeY) * 340,
-    }));
-  }, [snapshot?.stands]);
-
-  const zoneMarkers = useMemo(() => {
-    const zones = snapshot?.zones ?? [];
-    const columnWidth = 860 / zoneColumns;
-
-    return zones.map((zone, index) => ({
-      zone,
-      x: 70 + (index % zoneColumns) * columnWidth,
-      y: ZONES_TOP + Math.floor(index / zoneColumns) * ZONE_ROW_HEIGHT,
-      width: Math.min(260, columnWidth - 18),
-    }));
-  }, [snapshot?.zones, zoneColumns]);
-
-  const handleZoom = (direction: 1 | -1) => {
-    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom + direction * 0.25));
-    zoomRef.current = nextZoom;
-    setZoom(nextZoom);
-    const nextPan = clampPan(panRef.current, nextZoom, viewHeight);
-    panRef.current = nextPan;
-    setPan(nextPan);
+  const continuePermissionRequest = () => {
+    setPermissionRationaleVisible(false);
+    void requestPermission();
   };
 
-  const syncedAt = snapshot?.last_synced_at ? new Date(snapshot.last_synced_at) : null;
-  const timestampLabel =
-    syncedAt && !Number.isNaN(syncedAt.getTime())
-      ? `Aforo en caché · actualizado ${syncedAt.toLocaleString('es-ES')}`
-      : 'Aforo en caché · sin sincronización confirmada';
+  const startNewStand = () => {
+    setStandFormError(null);
+    setStandDraft({ name: '', ownerId: '', map_x: null, map_y: null });
+    setPlacingStandLocation(false);
+  };
+
+  const startEditingStand = (stand: Stand) => {
+    setStandFormError(null);
+    setStandDraft({
+      id: stand.id,
+      name: stand.name,
+      ownerId: stand.owner_id ?? '',
+      map_x: stand.map_x,
+      map_y: stand.map_y,
+    });
+    setPlacingStandLocation(false);
+  };
+
+  const saveStand = async () => {
+    if (!standDraft || !activeEventId) {
+      setStandFormError('Selecciona un evento antes de guardar el estand.');
+      return;
+    }
+
+    setSavingStand(true);
+    setStandFormError(null);
+    try {
+      await createOrUpdateStand(
+        activeRole,
+        {
+          id: standDraft.id,
+          name: standDraft.name,
+          owner_id: standDraft.ownerId.trim() || null,
+          map_x: standDraft.map_x ?? Number.NaN,
+          map_y: standDraft.map_y ?? Number.NaN,
+          evento_id: activeEventId,
+        },
+        new MapRepository(database),
+      );
+      setStandDraft(null);
+      setPlacingStandLocation(false);
+      refresh();
+    } catch (saveError: unknown) {
+      setStandFormError(
+        saveError instanceof Error ? saveError.message : 'No se pudo guardar el estand.',
+      );
+    } finally {
+      setSavingStand(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -162,170 +134,221 @@ export default function MapScreen() {
             <Text style={styles.eyebrow}>YOUR WAY / RECINTO</Text>
             <Text style={styles.title}>Mapa y aforo</Text>
           </View>
-          <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
-            <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
-            <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
-              {isOffline ? 'Sin conexión' : 'Datos en caché'}
-            </Text>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Abrir centro de avisos. ${unreadCount} sin leer`}
+              onPress={() => setNotificationCenterVisible(true)}
+              style={styles.bellButton}
+            >
+              <Text style={styles.bellIcon}>🔔</Text>
+              {unreadCount > 0 ? (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
+              <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
+              <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
+                {isOffline
+                  ? 'Sin conexión'
+                  : syncStatus === 'syncing'
+                    ? 'Sincronizando'
+                    : 'Conectado'}
+              </Text>
+            </View>
           </View>
         </View>
+
+        <View style={styles.selectorCard}>
+          <Text style={styles.selectorLabel}>Evento activo</Text>
+          <ScrollView
+            horizontal
+            contentContainerStyle={styles.selectorOptions}
+            showsHorizontalScrollIndicator={false}
+          >
+            {events.map((event) => (
+              <Pressable
+                key={event.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: activeEventId === event.id }}
+                onPress={() => setActiveEventId(event.id)}
+                style={[
+                  styles.selectorOption,
+                  activeEventId === event.id && styles.selectedSelectorOption,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.selectorOptionText,
+                    activeEventId === event.id && styles.selectedSelectorOptionText,
+                  ]}
+                >
+                  {event.titulo}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <View style={styles.roleRow}>
+            <Text style={styles.selectorLabel}>Rol temporal</Text>
+            <View style={styles.roleOptions}>
+              {(['ATTENDEE', 'STAFF'] as const).map((role) => (
+                <Pressable
+                  key={role}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: activeRole === role }}
+                  onPress={() => {
+                    setActiveRole(role);
+                    if (role !== 'STAFF') {
+                      setStandDraft(null);
+                      setPlacingStandLocation(false);
+                    }
+                  }}
+                  style={[styles.roleOption, activeRole === role && styles.selectedRoleOption]}
+                >
+                  <Text
+                    style={[
+                      styles.roleOptionText,
+                      activeRole === role && styles.selectedSelectorOptionText,
+                    ]}
+                  >
+                    {role === 'STAFF' ? 'STAFF · gestionar' : 'ATTENDEE'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {activeRole === 'STAFF' ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!activeEventId}
+              onPress={startNewStand}
+              style={[styles.addStandButton, !activeEventId && styles.disabledSyncButton]}
+            >
+              <Text style={styles.addStandButtonText}>＋ Añadir estand</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.roleHint}>
+              El selector es temporal para la demo; la autorización real debe venir de la sesión del servidor.
+            </Text>
+          )}
+        </View>
+
+        {standDraft ? (
+          <View style={styles.standForm}>
+            <Text style={styles.standFormTitle}>
+              {standDraft.id ? 'Editar estand' : 'Nuevo estand'}
+            </Text>
+            <TextInput
+              accessibilityLabel="Nombre del estand"
+              maxLength={100}
+              onChangeText={(name) => setStandDraft((draft) => draft ? { ...draft, name } : draft)}
+              placeholder="Nombre del estand"
+              style={styles.standInput}
+              value={standDraft.name}
+            />
+            <TextInput
+              accessibilityLabel="UUID del propietario, opcional"
+              autoCapitalize="none"
+              onChangeText={(ownerId) =>
+                setStandDraft((draft) => draft ? { ...draft, ownerId } : draft)
+              }
+              placeholder="UUID de owner_id (opcional)"
+              style={styles.standInput}
+              value={standDraft.ownerId}
+            />
+            <Text style={styles.coordinateLabel}>
+              Ubicación:{' '}
+              {standDraft.map_x === null || standDraft.map_y === null
+                ? 'sin seleccionar'
+                : `${standDraft.map_x.toFixed(2)}, ${standDraft.map_y.toFixed(2)}`}
+            </Text>
+            <View style={styles.standFormActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPlacingStandLocation((placing) => !placing)}
+                style={[
+                  styles.locationButton,
+                  placingStandLocation && styles.locationButtonActive,
+                ]}
+              >
+                <Text style={styles.locationButtonText}>
+                  {placingStandLocation ? 'Toca el plano…' : 'Elegir ubicación en el plano'}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={savingStand}
+                onPress={() => void saveStand()}
+                style={[styles.saveStandButton, savingStand && styles.disabledSyncButton]}
+              >
+                <Text style={styles.saveStandText}>
+                  {savingStand ? 'Guardando…' : 'Guardar'}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setStandDraft(null);
+                  setPlacingStandLocation(false);
+                  setStandFormError(null);
+                }}
+                style={styles.cancelStandButton}
+              >
+                <Text style={styles.cancelStandText}>Cancelar</Text>
+              </Pressable>
+            </View>
+            {standFormError ? <Text style={styles.standFormError}>{standFormError}</Text> : null}
+          </View>
+        ) : null}
 
         <Text style={styles.syncLabel}>
           {timestampLabel}
-          {isOffline ? ' · último dato conocido, no es en tiempo real' : ''}
+          {isOffline ? ' · último dato conocido, no es tiempo real' : ' · actualización puntual, no tiempo real'}
         </Text>
 
-        <View style={styles.mapHeading}>
-          <View>
-            <Text style={styles.sectionTitle}>Plano 2D</Text>
-            <Text style={styles.sectionSubtitle}>
-              Estands en coordenadas; zonas esquemáticas y sin escala.
-            </Text>
-          </View>
-          <View style={styles.zoomControls}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Reducir zoom"
-              onPress={() => handleZoom(-1)}
-              style={styles.zoomButton}
-            >
-              <Text style={styles.zoomButtonText}>−</Text>
-            </Pressable>
-            <Text style={styles.zoomValue}>{Math.round(zoom * 100)}%</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Aumentar zoom"
-              onPress={() => handleZoom(1)}
-              style={styles.zoomButton}
-            >
-              <Text style={styles.zoomButtonText}>+</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View
-          onLayout={(event) =>
-            setViewport({
-              width: Math.max(event.nativeEvent.layout.width, 1),
-              height: Math.max(event.nativeEvent.layout.height, 1),
-            })
+        <EventMapCanvas
+          stands={mapStands}
+          zones={mapZones}
+          occupancyDataSource="cache"
+          lastUpdatedAt={lastUpdatedAt}
+          loading={loading}
+          onPanningChange={setPanning}
+          managementMode={activeRole === 'STAFF'}
+          placingStandLocation={placingStandLocation}
+          previewCoordinates={
+            standDraft?.map_x !== null && standDraft?.map_x !== undefined &&
+            standDraft.map_y !== null
+              ? { map_x: standDraft.map_x, map_y: standDraft.map_y }
+              : null
           }
-          {...panResponder.panHandlers}
-          style={styles.mapFrame}
-        >
-          <Svg
-            accessibilityLabel="Plano 2D interactivo del recinto"
-            height="100%"
-            viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
-            width="100%"
-          >
-            <Rect fill="#FBFDFC" height={viewHeight} rx="24" width={VIEW_WIDTH} />
-            <G
-              transform={`translate(${pan.x} ${pan.y}) translate(${VIEW_WIDTH / 2} ${viewHeight / 2}) scale(${zoom}) translate(${-VIEW_WIDTH / 2} ${-viewHeight / 2})`}
-            >
-              {Array.from({ length: 19 }, (_, index) => (
-                <Line
-                  key={`vertical-${index}`}
-                  stroke="#E8EFEB"
-                  strokeWidth="1"
-                  x1={50 + index * 50}
-                  x2={50 + index * 50}
-                  y1="30"
-                  y2="480"
-                />
-              ))}
-              {Array.from({ length: 10 }, (_, index) => (
-                <Line
-                  key={`horizontal-${index}`}
-                  stroke="#E8EFEB"
-                  strokeWidth="1"
-                  x1="30"
-                  x2="970"
-                  y1={55 + index * 48}
-                  y2={55 + index * 48}
-                />
-              ))}
-              <SvgText fill="#71827D" fontSize="19" fontWeight="700" x="48" y="46">
-                ESTANDS
-              </SvgText>
-              {stands.map(({ stand, x, y }) => (
-                <G key={stand.id}>
-                  <Circle
-                    accessible
-                    accessibilityLabel={`Estand ${stand.name}. Pulsa para ver la ficha.`}
-                    cx={x}
-                    cy={y}
-                    fill="#167B71"
-                    onPress={() => setSelectedItem({ kind: 'stand', value: stand })}
-                    r="24"
-                    stroke="#FFFFFF"
-                    strokeWidth="5"
-                  />
-                  <SvgText
-                    fill="#173A35"
-                    fontSize="18"
-                    fontWeight="700"
-                    textAnchor="middle"
-                    x={x}
-                    y={y + 48}
-                  >
-                    {truncate(stand.name, 18)}
-                  </SvgText>
-                </G>
-              ))}
-              {stands.length === 0 ? (
-                <SvgText fill="#71827D" fontSize="22" textAnchor="middle" x="500" y="255">
-                  No hay estands con coordenadas disponibles
-                </SvgText>
-              ) : null}
+          onMapCoordinateSelect={(coordinates) => {
+            setStandDraft((draft) =>
+              draft ? { ...draft, map_x: coordinates.map_x, map_y: coordinates.map_y } : draft,
+            );
+            setPlacingStandLocation(false);
+          }}
+          onEditStand={startEditingStand}
+        />
 
-              <SvgText fill="#71827D" fontSize="19" fontWeight="700" x="48" y="510">
-                ZONAS · ESQUEMA SIN ESCALA
-              </SvgText>
-              {zoneMarkers.map(({ zone, x, y, width }) => (
-                <G key={zone.zone.id}>
-                  <Rect
-                    accessible
-                    accessibilityLabel={zoneAccessibilityLabel(zone)}
-                    fill={ZONE_LEVEL_COLORS[zone.level]}
-                    height="58"
-                    onPress={() => setSelectedItem({ kind: 'zone', value: zone })}
-                    rx="14"
-                    width={width}
-                    x={x}
-                    y={y}
-                  />
-                  <SvgText
-                    fill="#FFFFFF"
-                    fontSize="16"
-                    fontWeight="700"
-                    pointerEvents="none"
-                    textAnchor="middle"
-                    x={x + width / 2}
-                    y={y + 25}
-                  >
-                    {truncate(zone.zone.name, 23)}
-                  </SvgText>
-                  <SvgText
-                    fill="#FFFFFF"
-                    fontSize="13"
-                    pointerEvents="none"
-                    textAnchor="middle"
-                    x={x + width / 2}
-                    y={y + 45}
-                  >
-                    {zone.level === 'unavailable'
-                      ? 'Aforo no disponible'
-                      : `${zone.current_capacity} / ${zone.zone.max_capacity} · ${Math.round(zone.occupancy_percentage ?? 0)} %`}
-                  </SvgText>
-                </G>
-              ))}
-            </G>
-          </Svg>
-        </View>
-        <Text style={styles.gestureHint}>
-          Arrastra el plano para desplazarte y usa + / − para cambiar el zoom.
-        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: syncStatus === 'syncing' }}
+          disabled={syncStatus === 'syncing'}
+          onPress={refresh}
+          style={[
+            styles.syncButton,
+            syncStatus === 'syncing' && styles.disabledSyncButton,
+          ]}
+        >
+          <Text style={styles.syncButtonText}>
+            {syncStatus === 'syncing' ? 'Sincronizando mapa y aforo…' : 'Sincronizar ahora'}
+          </Text>
+        </Pressable>
 
         {error ? (
           <View style={styles.errorCard}>
@@ -335,20 +358,11 @@ export default function MapScreen() {
             </Pressable>
           </View>
         ) : null}
-
-        {loading && !snapshot ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color="#167B71" />
-            <Text style={styles.mutedText}>Cargando datos locales del mapa…</Text>
+        {syncError ? (
+          <View style={styles.syncErrorCard}>
+            <Text style={styles.syncErrorText}>{syncError}</Text>
           </View>
         ) : null}
-
-        <View style={styles.legend}>
-          <LegendItem color={ZONE_LEVEL_COLORS.available} label="Disponible · < 70 %" />
-          <LegendItem color={ZONE_LEVEL_COLORS.medium} label="Aforo medio · 70–94 %" />
-          <LegendItem color={ZONE_LEVEL_COLORS.full} label="Completo · ≥ 95 %" />
-          <LegendItem color={ZONE_LEVEL_COLORS.unavailable} label="Aforo no disponible" />
-        </View>
 
         <View style={styles.notificationCard}>
           <View style={styles.notificationHeader}>
@@ -358,171 +372,122 @@ export default function MapScreen() {
                 Organización, cambios de horario y alertas de aforo.
               </Text>
             </View>
-            {permissionState !== 'granted' ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void requestPermission()}
-                style={styles.enableButton}
-              >
-                <Text style={styles.enableButtonText}>Activar avisos</Text>
-              </Pressable>
-            ) : (
-              <Text style={styles.permissionEnabled}>Permiso activo</Text>
-            )}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setNotificationCenterVisible(true)}
+              style={styles.viewNotificationsButton}
+            >
+              <Text style={styles.viewNotificationsText}>
+                Ver avisos{unreadCount > 0 ? ` (${unreadCount})` : ''}
+              </Text>
+            </Pressable>
           </View>
+
           <Text style={styles.permissionHint}>
-            Solo se solicitará permiso al activar. Si lo deniegas, los avisos guardados seguirán
-            disponibles en esta pantalla.
+            Los avisos ya recibidos quedan guardados y se pueden consultar sin conexión.
+            {!isOnline ? ' No se reciben ni simulan avisos nuevos en modo offline.' : ''}
           </Text>
-          {permissionState === 'denied' ? (
-            <Text style={styles.warningText}>
-              Las notificaciones del sistema están desactivadas; los avisos in-app siguen disponibles.
-            </Text>
-          ) : null}
-          {permissionState === 'unavailable' ? (
-            <Text style={styles.warningText}>
-              Las notificaciones del sistema no están disponibles en esta plataforma.
-            </Text>
-          ) : null}
-          {notificationError ? <Text style={styles.warningText}>{notificationError}</Text> : null}
-          {alerts.length > 0 ? (
-            <View style={styles.alertList}>
-              {alerts.slice(0, 5).map((alert) => (
-                <View key={alert.id} style={styles.alertItem}>
-                  <Text style={styles.alertType}>{alertTypeLabel(alert.type)}</Text>
-                  <Text style={styles.alertTitle}>{alert.title}</Text>
-                  <Text style={styles.alertMessage}>{alert.message}</Text>
-                  <Text style={styles.alertDate}>{formatDate(alert.created_at)}</Text>
-                </View>
-              ))}
+
+          {permissionState === 'granted' ? (
+            <Text style={styles.permissionEnabled}>Notificaciones del sistema activas.</Text>
+          ) : permissionState === 'denied' ? (
+            <View>
+              <Text style={styles.warningText}>
+                Las notificaciones del sistema están desactivadas. Los avisos in-app y el historial
+                siguen disponibles.
+              </Text>
+              <View style={styles.permissionActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPermissionRationaleVisible(true)}
+                  style={styles.enableButton}
+                >
+                  <Text style={styles.enableButtonText}>Reintentar</Text>
+                </Pressable>
+                {Platform.OS !== 'web' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void openSettings()}
+                    style={styles.settingsButton}
+                  >
+                    <Text style={styles.settingsButtonText}>Abrir ajustes</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
+          ) : permissionState === 'unavailable' ? (
+            <Text style={styles.warningText}>
+              Las notificaciones del sistema no están disponibles en esta plataforma; los avisos
+              in-app siguen funcionando.
+            </Text>
           ) : (
-            <Text style={styles.mutedText}>Todavía no se han recibido avisos.</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPermissionRationaleVisible(true)}
+              style={styles.enableButton}
+            >
+              <Text style={styles.enableButtonText}>Activar avisos del sistema</Text>
+            </Pressable>
           )}
+          {notificationError ? <Text style={styles.warningText}>{notificationError}</Text> : null}
         </View>
 
         <Text style={styles.dataNote}>
           La base de datos actual no incluye la geometría de salas ni el servicio backend de avisos.
-          Las zonas se muestran como marcadores esquemáticos.
+          Las zonas se muestran como marcadores sin geometría de contorno.
         </Text>
       </ScrollView>
 
+      <NotificationCenter
+        visible={notificationCenterVisible}
+        notifications={notifications}
+        zones={notificationZones}
+        unreadCount={unreadCount}
+        isOnline={isOnline}
+        canSimulate={canSimulate}
+        permissionState={permissionState}
+        error={notificationError}
+        onClose={() => setNotificationCenterVisible(false)}
+        onMarkRead={markRead}
+        onMarkAllRead={markAllRead}
+        onSimulate={simulateNotification}
+      />
+
       <Modal
-        animationType="slide"
-        onRequestClose={() => setSelectedItem(null)}
+        animationType="fade"
+        onRequestClose={() => setPermissionRationaleVisible(false)}
         transparent
-        visible={selectedItem !== null}
+        visible={permissionRationaleVisible}
       >
-        <Pressable style={styles.modalScrim} onPress={() => setSelectedItem(null)}>
-          <Pressable style={styles.detailSheet} onPress={() => undefined}>
-            <View style={styles.sheetHandle} />
-            {selectedItem?.kind === 'stand' ? (
-              <>
-                <Text style={styles.sheetEyebrow}>ESTAND</Text>
-                <Text style={styles.sheetTitle}>{selectedItem.value.name}</Text>
-                <Text style={styles.sheetDetail}>
-                  Coordenadas del plano: {selectedItem.value.map_x}, {selectedItem.value.map_y}
-                </Text>
-              </>
-            ) : null}
-            {selectedItem?.kind === 'zone' ? (
-              <>
-                <Text style={styles.sheetEyebrow}>ZONA</Text>
-                <Text style={styles.sheetTitle}>{selectedItem.value.zone.name}</Text>
-                {selectedItem.value.level === 'unavailable' ? null : (
-                  <Text style={styles.sheetDetail}>
-                    Aforo derivado de registros: {selectedItem.value.current_capacity} /{' '}
-                    {selectedItem.value.zone.max_capacity}
-                  </Text>
-                )}
-                <Text style={styles.sheetDetail}>
-                  {occupancyLabel(selectedItem.value.level)}
-                  {selectedItem.value.occupancy_percentage === null
-                    ? ''
-                    : ` · ${Math.round(selectedItem.value.occupancy_percentage)} %`}
-                </Text>
-                <Text style={styles.sheetDetail}>
-                  Acceso requerido: {selectedItem.value.zone.required_role ?? 'No especificado'}
-                </Text>
-              </>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setSelectedItem(null)}
-              style={styles.sheetCloseButton}
-            >
-              <Text style={styles.sheetCloseText}>Cerrar</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
+        <View style={styles.rationaleBackdrop}>
+          <View style={styles.rationaleCard}>
+            <Text style={styles.rationaleTitle}>¿Para qué sirven los avisos?</Text>
+            <Text style={styles.rationaleText}>
+              Te informan de comunicaciones de la organización, cambios de horario y alertas de
+              aforo. El permiso permite mostrar notificaciones del sistema cuando la app está en
+              segundo plano. Los avisos in-app y el historial seguirán disponibles si lo deniegas.
+            </Text>
+            <View style={styles.rationaleActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPermissionRationaleVisible(false)}
+                style={styles.cancelButton}
+              >
+                <Text style={styles.cancelButtonText}>Ahora no</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={continuePermissionRequest}
+                style={styles.enableButton}
+              >
+                <Text style={styles.enableButtonText}>Continuar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
-}
-
-function clampPan(
-  pan: { x: number; y: number },
-  zoom: number,
-  viewHeight: number,
-): { x: number; y: number } {
-  const limitX = (VIEW_WIDTH * zoom) / 2;
-  const limitY = (viewHeight * zoom) / 2;
-  return {
-    x: Math.min(limitX, Math.max(-limitX, pan.x)),
-    y: Math.min(limitY, Math.max(-limitY, pan.y)),
-  };
-}
-
-function LegendItem({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendText}>{label}</Text>
-    </View>
-  );
-}
-
-function zoneAccessibilityLabel(zone: ZoneOccupancy): string {
-  const percentage =
-    zone.occupancy_percentage === null
-      ? 'aforo no disponible'
-      : `${Math.round(zone.occupancy_percentage)} por ciento, ${occupancyLabel(zone.level)}`;
-  return `${zone.zone.name}, ${zone.current_capacity} de ${zone.zone.max_capacity}, ${percentage}. Pulsa para ver detalles.`;
-}
-
-function occupancyLabel(level: ZoneOccupancy['level']): string {
-  switch (level) {
-    case 'available':
-      return 'Disponible';
-    case 'medium':
-      return 'Aforo medio';
-    case 'full':
-      return 'Aforo completo';
-    case 'unavailable':
-      return 'Aforo no disponible';
-  }
-}
-
-function alertTypeLabel(type: OrganizationAlertType): string {
-  switch (type) {
-    case 'ORGANIZATION':
-      return 'ORGANIZACIÓN';
-    case 'SCHEDULE_CHANGE':
-      return 'CAMBIO DE HORARIO';
-    case 'CAPACITY_OPEN':
-      return 'AFORO ABIERTO';
-    case 'CAPACITY_CLOSE':
-      return 'AFORO CERRADO';
-  }
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es-ES');
-}
-
-function truncate(value: string, maximumLength: number): string {
-  return value.length > maximumLength ? `${value.slice(0, maximumLength - 1)}…` : value;
 }
 
 const styles = StyleSheet.create({
@@ -534,53 +499,130 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 70,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  selectorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#E3EBE7',
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  selectorLabel: { color: '#526B63', fontSize: 10, fontWeight: '700' },
+  selectorOptions: { gap: 7, paddingVertical: 8 },
+  selectorOption: {
+    borderColor: '#DCE6E1',
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  selectedSelectorOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  selectorOptionText: { color: '#526B63', fontSize: 11, fontWeight: '600' },
+  selectedSelectorOptionText: { color: '#167B71', fontWeight: '700' },
+  roleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 },
+  roleOptions: { flexDirection: 'row', gap: 6 },
+  roleOption: { borderWidth: 1, borderColor: '#DCE6E1', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  selectedRoleOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  roleOptionText: { color: '#526B63', fontSize: 10, fontWeight: '600' },
+  addStandButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    backgroundColor: '#167B71',
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  addStandButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  roleHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 8 },
+  standForm: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#C9D8D1',
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 13,
+    marginBottom: 12,
+  },
+  standFormTitle: { color: '#173A35', fontSize: 14, fontWeight: '700', marginBottom: 8 },
+  standInput: {
+    color: '#243E39',
+    backgroundColor: '#FBFDFC',
+    borderColor: '#DCE6E1',
+    borderWidth: 1,
+    borderRadius: 8,
+    fontSize: 12,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  coordinateLabel: { color: '#526B63', fontSize: 11, marginTop: 9 },
+  standFormActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 10 },
+  locationButton: {
+    backgroundColor: '#FFF0D7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  locationButtonActive: { backgroundColor: '#E89A2C' },
+  locationButtonText: { color: '#704B11', fontSize: 10, fontWeight: '700' },
+  saveStandButton: { backgroundColor: '#167B71', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9 },
+  saveStandText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+  cancelStandButton: { paddingHorizontal: 8, paddingVertical: 9 },
+  cancelStandText: { color: '#526B63', fontSize: 10, fontWeight: '700' },
+  standFormError: { color: '#913C32', fontSize: 11, lineHeight: 16, marginTop: 8 },
   eyebrow: { color: '#56736D', fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
   title: { color: '#173A35', fontSize: 25, fontWeight: '700', marginTop: 4 },
+  bellButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E3EBE7',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 42,
+  },
+  bellIcon: { fontSize: 17 },
+  unreadBadge: {
+    position: 'absolute',
+    right: -5,
+    top: -5,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: '#C94F43',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  unreadBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '700' },
   networkBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E2EFEB',
     borderRadius: 16,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 7,
   },
   offlineBadge: { backgroundColor: '#FFF0D7' },
-  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 6 },
+  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 5 },
   offlineDot: { backgroundColor: '#C78219' },
-  networkLabel: { color: '#25635A', fontSize: 11, fontWeight: '600' },
+  networkLabel: { color: '#25635A', fontSize: 10, fontWeight: '600' },
   offlineLabel: { color: '#825510' },
   syncLabel: { color: '#71827D', fontSize: 11, marginTop: 4, marginBottom: 16 },
-  mapHeading: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+  syncButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#167B71',
+    borderRadius: 9,
+    marginBottom: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
   },
+  disabledSyncButton: { backgroundColor: '#91A7A0' },
+  syncButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   sectionTitle: { color: '#173A35', fontSize: 17, fontWeight: '700' },
   sectionSubtitle: { color: '#71827D', fontSize: 11, marginTop: 3 },
-  zoomControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  zoomButton: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#DCE6E1',
-  },
-  zoomButtonText: { color: '#167B71', fontSize: 21, fontWeight: '600', lineHeight: 24 },
-  zoomValue: { minWidth: 40, color: '#45625B', fontSize: 11, textAlign: 'center' },
-  mapFrame: {
-    width: '100%',
-    height: 310,
-    overflow: 'hidden',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#DCE6E1',
-    backgroundColor: '#FBFDFC',
-  },
-  gestureHint: { color: '#71827D', fontSize: 10, marginTop: 7 },
   errorCard: {
     borderLeftWidth: 3,
     borderLeftColor: '#C94F43',
@@ -591,17 +633,14 @@ const styles = StyleSheet.create({
   errorText: { color: '#7D322B', fontSize: 12 },
   retryButton: { alignSelf: 'flex-start', marginTop: 8 },
   retryText: { color: '#913C32', fontSize: 12, fontWeight: '700' },
-  loadingState: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: 9 },
-  mutedText: { color: '#6E817C', fontSize: 12, marginTop: 8 },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    paddingVertical: 14,
+  syncErrorCard: {
+    backgroundColor: '#FFF0D7',
+    borderLeftColor: '#C78219',
+    borderLeftWidth: 3,
+    marginTop: 8,
+    padding: 11,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 9, height: 9, borderRadius: 5 },
-  legendText: { color: '#526B63', fontSize: 10 },
+  syncErrorText: { color: '#825510', fontSize: 11, lineHeight: 16 },
   notificationCard: {
     padding: 15,
     backgroundColor: '#FFFFFF',
@@ -612,53 +651,44 @@ const styles = StyleSheet.create({
   },
   notificationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   notificationCopy: { flex: 1 },
+  viewNotificationsButton: {
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: '#E2EFEB',
+  },
+  viewNotificationsText: { color: '#167B71', fontSize: 11, fontWeight: '700' },
+  permissionEnabled: { color: '#167B71', fontSize: 11, fontWeight: '700', marginTop: 8 },
+  permissionHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 9 },
+  warningText: { color: '#8B5C13', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  permissionActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   enableButton: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 9,
     backgroundColor: '#167B71',
   },
   enableButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  permissionEnabled: { color: '#167B71', fontSize: 10, fontWeight: '700' },
-  permissionHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 9 },
-  warningText: { color: '#8B5C13', fontSize: 11, lineHeight: 16, marginTop: 8 },
-  alertList: { marginTop: 11 },
-  alertItem: { borderTopWidth: 1, borderTopColor: '#E7EEEA', paddingVertical: 10 },
-  alertType: { color: '#167B71', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
-  alertTitle: { color: '#243E39', fontSize: 13, fontWeight: '700', marginTop: 3 },
-  alertMessage: { color: '#526B63', fontSize: 11, lineHeight: 16, marginTop: 3 },
-  alertDate: { color: '#87958F', fontSize: 9, marginTop: 4 },
+  settingsButton: {
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 9,
+    borderColor: '#CBD8D2',
+    borderWidth: 1,
+  },
+  settingsButtonText: { color: '#526B63', fontSize: 11, fontWeight: '700' },
   dataNote: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 13 },
-  modalScrim: {
+  rationaleBackdrop: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(13, 30, 26, 0.38)',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(13, 35, 31, 0.5)',
+    padding: 22,
   },
-  detailSheet: {
-    paddingHorizontal: 22,
-    paddingTop: 13,
-    paddingBottom: 28,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: '#FFFFFF',
-  },
-  sheetHandle: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#D6E0DB',
-    alignSelf: 'center',
-    marginBottom: 18,
-  },
-  sheetEyebrow: { color: '#167B71', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
-  sheetTitle: { color: '#173A35', fontSize: 22, fontWeight: '700', marginTop: 5 },
-  sheetDetail: { color: '#526B63', fontSize: 13, lineHeight: 20, marginTop: 8 },
-  sheetCloseButton: {
-    alignItems: 'center',
-    paddingVertical: 13,
-    borderRadius: 10,
-    backgroundColor: '#E8F1ED',
-    marginTop: 20,
-  },
-  sheetCloseText: { color: '#167B71', fontSize: 14, fontWeight: '700' },
+  rationaleCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
+  rationaleTitle: { color: '#173A35', fontSize: 18, fontWeight: '700' },
+  rationaleText: { color: '#526B63', fontSize: 13, lineHeight: 20, marginTop: 9 },
+  rationaleActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 9, marginTop: 18 },
+  cancelButton: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
+  cancelButtonText: { color: '#526B63', fontSize: 11, fontWeight: '700' },
 });

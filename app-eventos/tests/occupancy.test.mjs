@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { calculateZoneOccupancy } from '../src/domain/map/calculateZoneOccupancy.ts';
+import {
+  MAP_MOCK_ACCESS_LOGS,
+  MAP_MOCK_ZONES,
+} from '../src/domain/map/mapMockData.ts';
 
 const zone = {
   id: '550e8400-e29b-41d4-a716-446655440000',
@@ -25,6 +29,20 @@ test('uses the exact 70% and 95% traffic-light thresholds', () => {
   assert.equal(calculateZoneOccupancy(zone, entries(70)).level, 'medium');
   assert.equal(calculateZoneOccupancy(zone, entries(94)).level, 'medium');
   assert.equal(calculateZoneOccupancy(zone, entries(95)).level, 'full');
+});
+
+test('mock access logs cover traffic-light boundaries and invalid capacity', () => {
+  const occupancies = MAP_MOCK_ZONES.map((item) =>
+    calculateZoneOccupancy(item, MAP_MOCK_ACCESS_LOGS),
+  );
+  assert.deepEqual(
+    occupancies.map((item) => item.level),
+    ['available', 'medium', 'medium', 'full', 'unavailable'],
+  );
+  assert.deepEqual(
+    occupancies.slice(0, 4).map((item) => item.occupancy_percentage),
+    [69, 70, 94, 95],
+  );
 });
 
 test('counts only this zone and applies entries/exits in timestamp order', () => {
@@ -60,9 +78,50 @@ test('never returns negative occupancy and marks invalid maximum capacity unavai
   const empty = calculateZoneOccupancy(zone, [exit]);
   assert.equal(empty.current_capacity, 0);
 
-  const invalid = calculateZoneOccupancy({ ...zone, max_capacity: 0 }, entries(1));
-  assert.equal(invalid.occupancy_percentage, null);
-  assert.equal(invalid.level, 'unavailable');
+  for (const max_capacity of [0, -1, null, undefined, Number.NaN]) {
+    const invalid = calculateZoneOccupancy({ ...zone, max_capacity }, entries(1));
+    assert.equal(invalid.occupancy_percentage, null);
+    assert.equal(invalid.level, 'unavailable');
+  }
+});
+
+test('deduplicates access logs by id without counting another zone', () => {
+  const entry = {
+    id: 'duplicate-entry',
+    user_id: null,
+    zone_id: zone.id,
+    action: 'ENTRY',
+    timestamp: '2026-01-01T00:00:00.000Z',
+  };
+  const duplicate = { ...entry };
+  const otherZone = { ...entry, id: 'other-zone', zone_id: 'another-zone' };
+
+  const result = calculateZoneOccupancy(zone, [entry, duplicate, otherZone]);
+  assert.equal(result.current_capacity, 1);
+  assert.equal(result.occupancy_percentage, 1);
+});
+
+test('marks malformed access log data as unavailable', () => {
+  const invalidAction = {
+    id: 'invalid-action',
+    user_id: null,
+    zone_id: zone.id,
+    action: 'ENTER',
+    timestamp: '2026-01-01T00:00:00.000Z',
+  };
+  const invalidTimestamp = {
+    id: 'invalid-timestamp',
+    user_id: null,
+    zone_id: zone.id,
+    action: 'ENTRY',
+    timestamp: 'not-a-timestamp',
+  };
+
+  for (const log of [invalidAction, invalidTimestamp]) {
+    const result = calculateZoneOccupancy(zone, [log]);
+    assert.equal(result.occupancy_percentage, null);
+    assert.equal(result.level, 'unavailable');
+  }
 });
 
 test('orders SQLite and ISO timestamps by instant, not by text', () => {

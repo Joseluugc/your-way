@@ -1,6 +1,7 @@
 export type UUID = string;
 
 export type UserRole = 'ATTENDEE' | 'VIP' | 'STAFF' | 'EXHIBITOR';
+export type StandSyncStatus = 'PENDING' | 'SYNCED';
 
 export interface Stand {
   id: UUID;
@@ -8,6 +9,8 @@ export interface Stand {
   owner_id: UUID | null;
   map_x: number;
   map_y: number;
+  evento_id: UUID;
+  sync_status: StandSyncStatus;
 }
 
 export interface Zone {
@@ -41,4 +44,9 @@ export interface MapSnapshot {
   stands: Stand[];
   zones: ZoneOccupancy[];
   last_synced_at: string | null;
+}
+
+export interface MapCoordinates {
+  map_x: number;
+  map_y: number;
 }

@@ -15,7 +15,7 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
   async fetchSnapshot(): Promise<RemoteMapSnapshot> {
     await ensureSession();
     const [standRows, zoneRows, accessLogRows] = await Promise.all([
-      fetchTableRows('stands', 'id, name, owner_id, map_x, map_y'),
+      fetchTableRows('stands', 'id, name, owner_id, map_x, map_y, evento_id'),
       fetchTableRows('zones', 'id, name, max_capacity, current_capacity, required_role'),
       fetchTableRows('access_logs', 'id, user_id, zone_id, action, timestamp'),
     ]);
@@ -34,6 +34,26 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
       access_logs: accessLogs,
       users: await fetchReferencedUsers(userIds),
     };
+  }
+
+  async upsertStands(stands: readonly Stand[]): Promise<void> {
+    if (stands.length === 0) {
+      return;
+    }
+
+    await ensureSession();
+    const rows = stands.map(({ id, name, owner_id, map_x, map_y, evento_id }) => ({
+      id,
+      name,
+      owner_id,
+      map_x,
+      map_y,
+      evento_id,
+    }));
+    const { error } = await supabase.from('stands').upsert(rows, { onConflict: 'id' });
+    if (error) {
+      throw new Error(`No se pudieron sincronizar los estands pendientes: ${error.message}`);
+    }
   }
 }
 
@@ -92,7 +112,8 @@ function parseStand(value: unknown): Stand {
     typeof value.map_x !== 'number' ||
     !Number.isFinite(value.map_x) ||
     typeof value.map_y !== 'number' ||
-    !Number.isFinite(value.map_y)
+    !Number.isFinite(value.map_y) ||
+    !isUuid(value.evento_id)
   ) {
     throw new Error('La respuesta remota contiene un estand con datos inválidos.');
   }
@@ -103,6 +124,8 @@ function parseStand(value: unknown): Stand {
     owner_id: value.owner_id,
     map_x: value.map_x,
     map_y: value.map_y,
+    evento_id: value.evento_id,
+    sync_status: 'SYNCED',
   };
 }
 

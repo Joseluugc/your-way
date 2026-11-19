@@ -1,5 +1,38 @@
 import type { AccessLog, Stand, Zone } from './mapTypes';
 
+export const MAP_SEED_EVENT_IDS = [
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000002',
+] as const;
+
+export interface MapSeedEvent {
+  id: string;
+  titulo: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  ubicacion: string;
+  descripcion: string;
+}
+
+export const MAP_SEED_EVENTS: MapSeedEvent[] = [
+  {
+    id: MAP_SEED_EVENT_IDS[0],
+    titulo: 'Presentación Your Way',
+    fecha_inicio: '2026-11-15T10:00:00.000Z',
+    fecha_fin: '2026-11-15T11:30:00.000Z',
+    ubicacion: 'Auditorio Principal',
+    descripcion: 'Evento de ejemplo para validar el mapa y la gestión de estands.',
+  },
+  {
+    id: MAP_SEED_EVENT_IDS[1],
+    titulo: 'Taller de Networking',
+    fecha_inicio: '2026-11-15T12:30:00.000Z',
+    fecha_fin: '2026-11-15T14:00:00.000Z',
+    ubicacion: 'Zona VIP & Lounge',
+    descripcion: 'Segundo evento de ejemplo con sus propios estands.',
+  },
+];
+
 export const MAP_MOCK_STANDS: Stand[] = [
   {
     id: '550e8400-e29b-41d4-a716-446655440001',
@@ -7,6 +40,8 @@ export const MAP_MOCK_STANDS: Stand[] = [
     owner_id: '550e8400-e29b-41d4-a716-446655440101',
     map_x: 12.5,
     map_y: 18,
+    evento_id: MAP_SEED_EVENT_IDS[0],
+    sync_status: 'SYNCED',
   },
   {
     id: '550e8400-e29b-41d4-a716-446655440002',
@@ -14,6 +49,8 @@ export const MAP_MOCK_STANDS: Stand[] = [
     owner_id: '550e8400-e29b-41d4-a716-446655440102',
     map_x: 38,
     map_y: 31.5,
+    evento_id: MAP_SEED_EVENT_IDS[0],
+    sync_status: 'SYNCED',
   },
   {
     id: '550e8400-e29b-41d4-a716-446655440003',
@@ -21,6 +58,8 @@ export const MAP_MOCK_STANDS: Stand[] = [
     owner_id: null,
     map_x: 68,
     map_y: 22,
+    evento_id: MAP_SEED_EVENT_IDS[1],
+    sync_status: 'SYNCED',
   },
   {
     id: '550e8400-e29b-41d4-a716-446655440004',
@@ -28,6 +67,8 @@ export const MAP_MOCK_STANDS: Stand[] = [
     owner_id: null,
     map_x: 89.5,
     map_y: 43,
+    evento_id: MAP_SEED_EVENT_IDS[1],
+    sync_status: 'SYNCED',
   },
 ];
 

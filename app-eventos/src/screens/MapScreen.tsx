@@ -6,19 +6,36 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
 import EventMapCanvas, {
   getOccupancyFreshnessLabel,
 } from '../components/EventMapCanvas';
+import { MapRepository } from '../database/MapRepository';
+import { createOrUpdateStand } from '../domain/map/manageStand';
+import type { Stand, UserRole } from '../domain/map/mapTypes';
 import NotificationCenter from '../components/NotificationCenter';
 import { useMapData } from '../hooks/useMapData';
 import { useEventNotifications } from '../providers/NotificationProvider';
 
+interface StandDraft {
+  id?: string;
+  name: string;
+  ownerId: string;
+  map_x: number | null;
+  map_y: number | null;
+}
+
 export default function MapScreen() {
+  const database = useSQLiteContext();
   const {
     snapshot,
+    events,
+    activeEventId,
+    setActiveEventId,
     loading,
     error,
     syncError,
@@ -42,6 +59,11 @@ export default function MapScreen() {
   const [panning, setPanning] = useState(false);
   const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
   const [permissionRationaleVisible, setPermissionRationaleVisible] = useState(false);
+  const [activeRole, setActiveRole] = useState<UserRole>('ATTENDEE');
+  const [standDraft, setStandDraft] = useState<StandDraft | null>(null);
+  const [placingStandLocation, setPlacingStandLocation] = useState(false);
+  const [standFormError, setStandFormError] = useState<string | null>(null);
+  const [savingStand, setSavingStand] = useState(false);
   const lastUpdatedAt = snapshot?.last_synced_at ?? null;
   const mapStands = snapshot?.stands ?? [];
   const mapZones = snapshot?.zones ?? [];
@@ -51,6 +73,57 @@ export default function MapScreen() {
   const continuePermissionRequest = () => {
     setPermissionRationaleVisible(false);
     void requestPermission();
+  };
+
+  const startNewStand = () => {
+    setStandFormError(null);
+    setStandDraft({ name: '', ownerId: '', map_x: null, map_y: null });
+    setPlacingStandLocation(false);
+  };
+
+  const startEditingStand = (stand: Stand) => {
+    setStandFormError(null);
+    setStandDraft({
+      id: stand.id,
+      name: stand.name,
+      ownerId: stand.owner_id ?? '',
+      map_x: stand.map_x,
+      map_y: stand.map_y,
+    });
+    setPlacingStandLocation(false);
+  };
+
+  const saveStand = async () => {
+    if (!standDraft || !activeEventId) {
+      setStandFormError('Selecciona un evento antes de guardar el estand.');
+      return;
+    }
+
+    setSavingStand(true);
+    setStandFormError(null);
+    try {
+      await createOrUpdateStand(
+        activeRole,
+        {
+          id: standDraft.id,
+          name: standDraft.name,
+          owner_id: standDraft.ownerId.trim() || null,
+          map_x: standDraft.map_x ?? Number.NaN,
+          map_y: standDraft.map_y ?? Number.NaN,
+          evento_id: activeEventId,
+        },
+        new MapRepository(database),
+      );
+      setStandDraft(null);
+      setPlacingStandLocation(false);
+      refresh();
+    } catch (saveError: unknown) {
+      setStandFormError(
+        saveError instanceof Error ? saveError.message : 'No se pudo guardar el estand.',
+      );
+    } finally {
+      setSavingStand(false);
+    }
   };
 
   return (
@@ -90,6 +163,149 @@ export default function MapScreen() {
           </View>
         </View>
 
+        <View style={styles.selectorCard}>
+          <Text style={styles.selectorLabel}>Evento activo</Text>
+          <ScrollView
+            horizontal
+            contentContainerStyle={styles.selectorOptions}
+            showsHorizontalScrollIndicator={false}
+          >
+            {events.map((event) => (
+              <Pressable
+                key={event.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: activeEventId === event.id }}
+                onPress={() => setActiveEventId(event.id)}
+                style={[
+                  styles.selectorOption,
+                  activeEventId === event.id && styles.selectedSelectorOption,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.selectorOptionText,
+                    activeEventId === event.id && styles.selectedSelectorOptionText,
+                  ]}
+                >
+                  {event.titulo}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <View style={styles.roleRow}>
+            <Text style={styles.selectorLabel}>Rol temporal</Text>
+            <View style={styles.roleOptions}>
+              {(['ATTENDEE', 'STAFF'] as const).map((role) => (
+                <Pressable
+                  key={role}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: activeRole === role }}
+                  onPress={() => {
+                    setActiveRole(role);
+                    if (role !== 'STAFF') {
+                      setStandDraft(null);
+                      setPlacingStandLocation(false);
+                    }
+                  }}
+                  style={[styles.roleOption, activeRole === role && styles.selectedRoleOption]}
+                >
+                  <Text
+                    style={[
+                      styles.roleOptionText,
+                      activeRole === role && styles.selectedSelectorOptionText,
+                    ]}
+                  >
+                    {role === 'STAFF' ? 'STAFF · gestionar' : 'ATTENDEE'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {activeRole === 'STAFF' ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!activeEventId}
+              onPress={startNewStand}
+              style={[styles.addStandButton, !activeEventId && styles.disabledSyncButton]}
+            >
+              <Text style={styles.addStandButtonText}>＋ Añadir estand</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.roleHint}>
+              El selector es temporal para la demo; la autorización real debe venir de la sesión del servidor.
+            </Text>
+          )}
+        </View>
+
+        {standDraft ? (
+          <View style={styles.standForm}>
+            <Text style={styles.standFormTitle}>
+              {standDraft.id ? 'Editar estand' : 'Nuevo estand'}
+            </Text>
+            <TextInput
+              accessibilityLabel="Nombre del estand"
+              maxLength={100}
+              onChangeText={(name) => setStandDraft((draft) => draft ? { ...draft, name } : draft)}
+              placeholder="Nombre del estand"
+              style={styles.standInput}
+              value={standDraft.name}
+            />
+            <TextInput
+              accessibilityLabel="UUID del propietario, opcional"
+              autoCapitalize="none"
+              onChangeText={(ownerId) =>
+                setStandDraft((draft) => draft ? { ...draft, ownerId } : draft)
+              }
+              placeholder="UUID de owner_id (opcional)"
+              style={styles.standInput}
+              value={standDraft.ownerId}
+            />
+            <Text style={styles.coordinateLabel}>
+              Ubicación:{' '}
+              {standDraft.map_x === null || standDraft.map_y === null
+                ? 'sin seleccionar'
+                : `${standDraft.map_x.toFixed(2)}, ${standDraft.map_y.toFixed(2)}`}
+            </Text>
+            <View style={styles.standFormActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPlacingStandLocation((placing) => !placing)}
+                style={[
+                  styles.locationButton,
+                  placingStandLocation && styles.locationButtonActive,
+                ]}
+              >
+                <Text style={styles.locationButtonText}>
+                  {placingStandLocation ? 'Toca el plano…' : 'Elegir ubicación en el plano'}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={savingStand}
+                onPress={() => void saveStand()}
+                style={[styles.saveStandButton, savingStand && styles.disabledSyncButton]}
+              >
+                <Text style={styles.saveStandText}>
+                  {savingStand ? 'Guardando…' : 'Guardar'}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setStandDraft(null);
+                  setPlacingStandLocation(false);
+                  setStandFormError(null);
+                }}
+                style={styles.cancelStandButton}
+              >
+                <Text style={styles.cancelStandText}>Cancelar</Text>
+              </Pressable>
+            </View>
+            {standFormError ? <Text style={styles.standFormError}>{standFormError}</Text> : null}
+          </View>
+        ) : null}
+
         <Text style={styles.syncLabel}>
           {timestampLabel}
           {isOffline ? ' · último dato conocido, no es tiempo real' : ' · actualización puntual, no tiempo real'}
@@ -102,6 +318,21 @@ export default function MapScreen() {
           lastUpdatedAt={lastUpdatedAt}
           loading={loading}
           onPanningChange={setPanning}
+          managementMode={activeRole === 'STAFF'}
+          placingStandLocation={placingStandLocation}
+          previewCoordinates={
+            standDraft?.map_x !== null && standDraft?.map_x !== undefined &&
+            standDraft.map_y !== null
+              ? { map_x: standDraft.map_x, map_y: standDraft.map_y }
+              : null
+          }
+          onMapCoordinateSelect={(coordinates) => {
+            setStandDraft((draft) =>
+              draft ? { ...draft, map_x: coordinates.map_x, map_y: coordinates.map_y } : draft,
+            );
+            setPlacingStandLocation(false);
+          }}
+          onEditStand={startEditingStand}
         />
 
         <Pressable
@@ -269,6 +500,77 @@ const styles = StyleSheet.create({
     minHeight: 70,
   },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  selectorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: '#E3EBE7',
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  selectorLabel: { color: '#526B63', fontSize: 10, fontWeight: '700' },
+  selectorOptions: { gap: 7, paddingVertical: 8 },
+  selectorOption: {
+    borderColor: '#DCE6E1',
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  selectedSelectorOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  selectorOptionText: { color: '#526B63', fontSize: 11, fontWeight: '600' },
+  selectedSelectorOptionText: { color: '#167B71', fontWeight: '700' },
+  roleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 },
+  roleOptions: { flexDirection: 'row', gap: 6 },
+  roleOption: { borderWidth: 1, borderColor: '#DCE6E1', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  selectedRoleOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  roleOptionText: { color: '#526B63', fontSize: 10, fontWeight: '600' },
+  addStandButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    backgroundColor: '#167B71',
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  addStandButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  roleHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 8 },
+  standForm: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#C9D8D1',
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 13,
+    marginBottom: 12,
+  },
+  standFormTitle: { color: '#173A35', fontSize: 14, fontWeight: '700', marginBottom: 8 },
+  standInput: {
+    color: '#243E39',
+    backgroundColor: '#FBFDFC',
+    borderColor: '#DCE6E1',
+    borderWidth: 1,
+    borderRadius: 8,
+    fontSize: 12,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  coordinateLabel: { color: '#526B63', fontSize: 11, marginTop: 9 },
+  standFormActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 10 },
+  locationButton: {
+    backgroundColor: '#FFF0D7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  locationButtonActive: { backgroundColor: '#E89A2C' },
+  locationButtonText: { color: '#704B11', fontSize: 10, fontWeight: '700' },
+  saveStandButton: { backgroundColor: '#167B71', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9 },
+  saveStandText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+  cancelStandButton: { paddingHorizontal: 8, paddingVertical: 9 },
+  cancelStandText: { color: '#526B63', fontSize: 10, fontWeight: '700' },
+  standFormError: { color: '#913C32', fontSize: 11, lineHeight: 16, marginTop: 8 },
   eyebrow: { color: '#56736D', fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
   title: { color: '#173A35', fontSize: 25, fontWeight: '700', marginTop: 4 },
   bellButton: {

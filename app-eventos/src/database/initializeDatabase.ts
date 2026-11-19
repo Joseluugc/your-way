@@ -3,6 +3,7 @@ import {
   MAP_MOCK_ACCESS_LOGS,
   MAP_MOCK_STANDS,
   MAP_MOCK_ZONES,
+  MAP_SEED_EVENTS,
 } from '../domain/map/mapMockData.ts';
 
 export async function initializeDatabase(database: SQLiteDatabase): Promise<void> {
@@ -179,6 +180,24 @@ const MIGRATIONS: string[] = [
     CREATE INDEX idx_cached_notifications_received_at
       ON cached_notifications(received_at, id);
   `,
+  // 3: asocia los estands existentes a un evento y crea su estado local de sincronización.
+  `
+    INSERT OR IGNORE INTO eventos (
+      id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at, sync_status
+    ) VALUES
+      ('${MAP_SEED_EVENTS[0].id}', '${MAP_SEED_EVENTS[0].titulo}', '${MAP_SEED_EVENTS[0].fecha_inicio}', '${MAP_SEED_EVENTS[0].fecha_fin}', '${MAP_SEED_EVENTS[0].ubicacion}', '${MAP_SEED_EVENTS[0].descripcion}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'pending'),
+      ('${MAP_SEED_EVENTS[1].id}', '${MAP_SEED_EVENTS[1].titulo}', '${MAP_SEED_EVENTS[1].fecha_inicio}', '${MAP_SEED_EVENTS[1].fecha_fin}', '${MAP_SEED_EVENTS[1].ubicacion}', '${MAP_SEED_EVENTS[1].descripcion}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'pending');
+
+    ALTER TABLE stands ADD COLUMN evento_id TEXT REFERENCES eventos(id) ON DELETE SET NULL;
+    ALTER TABLE stands ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'SYNCED'
+      CHECK (sync_status IN ('PENDING', 'SYNCED'));
+    UPDATE stands
+      SET evento_id = (
+        SELECT id FROM eventos ORDER BY fecha_inicio, id LIMIT 1
+      )
+      WHERE evento_id IS NULL;
+    CREATE INDEX idx_stands_evento_id ON stands(evento_id);
+  `,
 ];
 
 async function runMigrations(database: SQLiteDatabase): Promise<void> {
@@ -203,14 +222,32 @@ export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
   }
 
   await database.withTransactionAsync(async () => {
+    for (const event of MAP_SEED_EVENTS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO eventos (
+           id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion,
+           updated_at, sync_status
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        event.id,
+        event.titulo,
+        event.fecha_inicio,
+        event.fecha_fin,
+        event.ubicacion,
+        event.descripcion,
+        new Date().toISOString(),
+      );
+    }
+
     for (const stand of MAP_MOCK_STANDS) {
       await database.runAsync(
-        `INSERT OR IGNORE INTO stands (id, name, owner_id, map_x, map_y)
-         VALUES (?, ?, NULL, ?, ?)`,
+        `INSERT OR IGNORE INTO stands (
+           id, name, owner_id, map_x, map_y, evento_id, sync_status
+         ) VALUES (?, ?, NULL, ?, ?, ?, 'SYNCED')`,
         stand.id,
         stand.name,
         stand.map_x,
         stand.map_y,
+        stand.evento_id,
       );
     }
 
@@ -238,7 +275,6 @@ export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
         accessLog.timestamp,
       );
     }
-
   });
 }
 

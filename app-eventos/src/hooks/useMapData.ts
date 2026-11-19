@@ -6,11 +6,15 @@ import { syncMapAndOccupancy } from '../domain/map/syncMapAndOccupancy';
 import type { MapSnapshot } from '../domain/map/mapTypes';
 import { MapRepository } from '../database/MapRepository';
 import { SupabaseMapDataSource } from '../sync/supabaseMapDataSource';
+import { syncEventos } from '../sync/eventosSync';
+import type { Evento } from '../database/eventQueries';
 
 type MapSyncStatus = 'idle' | 'offline' | 'syncing' | 'synced' | 'error';
 
 interface MapDataState {
   snapshot: MapSnapshot | null;
+  events: Evento[];
+  eventsLoaded: boolean;
   loading: boolean;
   error: string | null;
   syncError: string | null;
@@ -28,11 +32,14 @@ export function useMapData() {
   const [syncVersion, setSyncVersion] = useState(0);
   const [state, setState] = useState<MapDataState>({
     snapshot: null,
+    events: [],
+    eventsLoaded: false,
     loading: true,
     error: null,
     syncError: null,
     syncStatus: 'idle',
   });
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (!isOnline) {
@@ -53,7 +60,38 @@ export function useMapData() {
     let active = true;
     const repository = new MapRepository(database);
 
-    void getMapSnapshot(repository)
+    void repository.getEvents()
+      .then((events) => {
+        if (active) {
+          setState((current) => ({ ...current, events, eventsLoaded: true }));
+          if (!activeEventId || !events.some((event) => event.id === activeEventId)) {
+            setActiveEventId(events[0]?.id ?? null);
+          }
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setState((current) => ({
+            ...current,
+            loading: false,
+            eventsLoaded: true,
+            error: loadError instanceof Error
+              ? `No se pudieron cargar los eventos locales: ${loadError.message}`
+              : 'No se pudieron cargar los eventos locales.',
+          }));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [database, reloadVersion, activeEventId]);
+
+  useEffect(() => {
+    let active = true;
+    const repository = new MapRepository(database);
+
+    void getMapSnapshot(repository, activeEventId)
       .then((snapshot) => {
         if (active) {
           setState((current) => ({
@@ -80,7 +118,7 @@ export function useMapData() {
     return () => {
       active = false;
     };
-  }, [database, reloadVersion, isOffline]);
+  }, [database, reloadVersion, isOffline, activeEventId]);
 
   useEffect(() => {
     const subscription = addDatabaseChangeListener(({ tableName }) => {
@@ -88,7 +126,8 @@ export function useMapData() {
         tableName === 'stands' ||
         tableName === 'zones' ||
         tableName === 'access_logs' ||
-        tableName === 'local_sync_state'
+        tableName === 'local_sync_state' ||
+        tableName === 'eventos'
       ) {
         setReloadVersion((version) => version + 1);
       }
@@ -98,7 +137,7 @@ export function useMapData() {
   }, []);
 
   useEffect(() => {
-    if (!isOnline) {
+    if (!isOnline || !state.eventsLoaded) {
       return;
     }
 
@@ -114,7 +153,15 @@ export function useMapData() {
             syncStatus: 'syncing',
           }));
         }
-        return syncMapAndOccupancy(repository, new SupabaseMapDataSource(), true);
+        return syncEventos(database).then(() =>
+          syncMapAndOccupancy(
+            repository,
+            new SupabaseMapDataSource(),
+            true,
+            undefined,
+            activeEventId,
+          ),
+        );
       })
       .then((result) => {
         if (active) {
@@ -144,14 +191,16 @@ export function useMapData() {
     return () => {
       active = false;
     };
-  }, [database, isOnline, syncVersion]);
+  }, [database, isOnline, syncVersion, state.eventsLoaded, activeEventId]);
 
   return useMemo(
     () => ({
       ...state,
+      activeEventId,
+      setActiveEventId,
       isOffline,
       refresh,
     }),
-    [state, isOffline, refresh],
+    [state, activeEventId, isOffline, refresh],
   );
 }

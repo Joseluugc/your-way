@@ -11,9 +11,19 @@ import {
   type PanResponderGestureState,
 } from 'react-native';
 import Svg, { Circle, G, Line, Rect, Text as SvgText } from 'react-native-svg';
-import type { OccupancyLevel, Stand, ZoneOccupancy } from '../domain/map/mapTypes';
+import {
+  canvasPointToMapCoordinates,
+  mapCoordinatesToCanvasPoint,
+  mapCoordinatesToViewportPoint,
+  MAP_VIEW_WIDTH,
+} from '../domain/map/mapCoordinates';
+import type {
+  MapCoordinates,
+  OccupancyLevel,
+  Stand,
+  ZoneOccupancy,
+} from '../domain/map/mapTypes';
 
-const VIEW_WIDTH = 1000;
 const BASE_VIEW_HEIGHT = 800;
 const ZONES_TOP = 650;
 const ZONE_ROW_HEIGHT = 110;
@@ -38,6 +48,11 @@ interface EventMapCanvasProps {
   loading?: boolean;
   demoData?: boolean;
   onPanningChange?: (panning: boolean) => void;
+  managementMode?: boolean;
+  placingStandLocation?: boolean;
+  previewCoordinates?: MapCoordinates | null;
+  onMapCoordinateSelect?: (coordinates: MapCoordinates) => void;
+  onEditStand?: (stand: Stand) => void;
 }
 
 type SelectedMapItem =
@@ -57,6 +72,11 @@ export default function EventMapCanvas({
   loading = false,
   demoData = false,
   onPanningChange,
+  managementMode = false,
+  placingStandLocation = false,
+  previewCoordinates = null,
+  onMapCoordinateSelect,
+  onEditStand,
 }: EventMapCanvasProps) {
   const [selectedItem, setSelectedItem] = useState<SelectedMapItem | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -71,7 +91,7 @@ export default function EventMapCanvas({
     BASE_VIEW_HEIGHT,
     ZONES_TOP + Math.ceil(zones.length / zoneColumns) * ZONE_ROW_HEIGHT + 20,
   );
-  const pixelsPerUnit = Math.min(viewport.width / VIEW_WIDTH, viewport.height / viewHeight);
+  const pixelsPerUnit = Math.min(viewport.width / MAP_VIEW_WIDTH, viewport.height / viewHeight);
 
   const positionedStands = useMemo(() => getPositionedStands(stands), [stands]);
   const zoneMarkers = useMemo(() => {
@@ -137,7 +157,7 @@ export default function EventMapCanvas({
     setPan(nextPan);
   };
 
-  const empty = stands.length === 0 && zones.length === 0;
+  const empty = stands.length === 0 && zones.length === 0 && !managementMode;
 
   return (
     <View style={styles.container}>
@@ -206,12 +226,12 @@ export default function EventMapCanvas({
               accessibilityLabel="Plano 2D interactivo con estands y salas"
               height="100%"
               pointerEvents="none"
-              viewBox={`0 0 ${VIEW_WIDTH} ${viewHeight}`}
+              viewBox={`0 0 ${MAP_VIEW_WIDTH} ${viewHeight}`}
               width="100%"
             >
-              <Rect fill="#FBFDFC" height={viewHeight} rx="24" width={VIEW_WIDTH} />
+              <Rect fill="#FBFDFC" height={viewHeight} rx="24" width={MAP_VIEW_WIDTH} />
               <G
-                transform={`translate(${pan.x} ${pan.y}) translate(${VIEW_WIDTH / 2} ${viewHeight / 2}) scale(${zoom}) translate(${-VIEW_WIDTH / 2} ${-viewHeight / 2})`}
+                transform={`translate(${pan.x} ${pan.y}) translate(${MAP_VIEW_WIDTH / 2} ${viewHeight / 2}) scale(${zoom}) translate(${-MAP_VIEW_WIDTH / 2} ${-viewHeight / 2})`}
               >
                 {Array.from({ length: 19 }, (_, index) => (
                   <Line
@@ -262,6 +282,16 @@ export default function EventMapCanvas({
                     </SvgText>
                   </G>
                 ))}
+                {previewCoordinates ? (
+                  <Circle
+                    cx={mapCoordinatesToCanvasPoint(previewCoordinates).x}
+                    cy={mapCoordinatesToCanvasPoint(previewCoordinates).y}
+                    fill="#E89A2C"
+                    r="22"
+                    stroke="#FFFFFF"
+                    strokeWidth="5"
+                  />
+                ) : null}
 
                 <SvgText fill="#71827D" fontSize="19" fontWeight="700" x="48" y="635">
                   SALAS · MARCADORES SIN GEOMETRÍA
@@ -305,10 +335,34 @@ export default function EventMapCanvas({
               </G>
             </Svg>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+              {placingStandLocation ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Elegir ubicación del estand tocando el plano"
+                  onPress={(event) => {
+                    onMapCoordinateSelect?.(
+                      canvasPointToMapCoordinates(
+                        { x: event.nativeEvent.locationX, y: event.nativeEvent.locationY },
+                        pan,
+                        zoom,
+                        viewport,
+                        viewHeight,
+                      ),
+                    );
+                  }}
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : null}
               {positionedStands.map(({ stand, x, y }) => {
-                const point = toViewportPoint({ x, y }, pan, zoom, viewport, viewHeight);
+                const point = mapCoordinatesToViewportPoint(
+                  { map_x: stand.map_x, map_y: stand.map_y },
+                  pan,
+                  zoom,
+                  viewport,
+                  viewHeight,
+                );
                 return (
-                  <Pressable
+                  !placingStandLocation ? <Pressable
                     key={stand.id}
                     accessible={true}
                     accessibilityRole="button"
@@ -318,11 +372,11 @@ export default function EventMapCanvas({
                       styles.markerHitTarget,
                       { left: point.x - 28, top: point.y - 28 },
                     ]}
-                  />
+                  /> : null
                 );
               })}
               {zoneMarkers.map(({ zone, x, y, width }) => {
-                const point = toViewportPoint(
+                const point = mapSvgPointToViewport(
                   { x: x + width / 2, y: y + 34 },
                   pan,
                   zoom,
@@ -330,7 +384,7 @@ export default function EventMapCanvas({
                   viewHeight,
                 );
                 return (
-                  <Pressable
+                  !placingStandLocation ? <Pressable
                     key={zone.zone.id}
                     accessible={true}
                     accessibilityRole="button"
@@ -344,12 +398,16 @@ export default function EventMapCanvas({
                       styles.markerHitTarget,
                       { left: point.x - 28, top: point.y - 28 },
                     ]}
-                  />
+                  /> : null
                 );
               })}
             </View>
           </View>
-          <Text style={styles.gestureHint}>Arrastra el plano para desplazarte y usa + / − para el zoom.</Text>
+          <Text style={styles.gestureHint}>
+            {placingStandLocation
+              ? 'Toca el plano para elegir la ubicación. Puedes ajustar el zoom y desplazarte antes de elegir.'
+              : 'Arrastra el plano para desplazarte y usa + / − para el zoom.'}
+          </Text>
           <View style={styles.zoneStatusList}>
             {zones.map((zone) => (
               <Pressable
@@ -433,6 +491,18 @@ export default function EventMapCanvas({
                 </Text>
               </>
             ) : null}
+            {managementMode && selectedItem?.kind === 'stand' && onEditStand ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  onEditStand(selectedItem.value);
+                  setSelectedItem(null);
+                }}
+                style={styles.sheetEditButton}
+              >
+                <Text style={styles.sheetEditText}>Editar ubicación y datos</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               onPress={() => setSelectedItem(null)}
@@ -507,17 +577,17 @@ function getZoneAccessibilityLabel(
   return `Sala ${zone.zone.name}. ${getZoneOccupancySummary(zone)}. ${getOccupancyFreshnessLabel(source, lastUpdatedAt)}. Pulsa para ver la ficha.`;
 }
 
-function toViewportPoint(
+function mapSvgPointToViewport(
   point: Point,
   pan: Point,
   zoom: number,
   viewport: { width: number; height: number },
   viewHeight: number,
 ): Point {
-  const scale = Math.min(viewport.width / VIEW_WIDTH, viewport.height / viewHeight);
-  const offsetX = (viewport.width - VIEW_WIDTH * scale) / 2;
+  const scale = Math.min(viewport.width / MAP_VIEW_WIDTH, viewport.height / viewHeight);
+  const offsetX = (viewport.width - MAP_VIEW_WIDTH * scale) / 2;
   const offsetY = (viewport.height - viewHeight * scale) / 2;
-  const x = pan.x + VIEW_WIDTH / 2 + zoom * (point.x - VIEW_WIDTH / 2);
+  const x = pan.x + MAP_VIEW_WIDTH / 2 + zoom * (point.x - MAP_VIEW_WIDTH / 2);
   const y = pan.y + viewHeight / 2 + zoom * (point.y - viewHeight / 2);
   return {
     x: offsetX + x * scale,
@@ -533,22 +603,14 @@ function getPositionedStands(stands: readonly Stand[]): ({ stand: Stand } & Poin
     return [];
   }
 
-  const minX = Math.min(...validStands.map((stand) => stand.map_x));
-  const maxX = Math.max(...validStands.map((stand) => stand.map_x));
-  const minY = Math.min(...validStands.map((stand) => stand.map_y));
-  const maxY = Math.max(...validStands.map((stand) => stand.map_y));
-  const rangeX = maxX - minX;
-  const rangeY = maxY - minY;
-
   return validStands.map((stand) => ({
     stand,
-    x: rangeX === 0 ? 500 : 100 + ((stand.map_x - minX) / rangeX) * 800,
-    y: rangeY === 0 ? 340 : 100 + ((stand.map_y - minY) / rangeY) * 430,
+    ...mapCoordinatesToCanvasPoint({ map_x: stand.map_x, map_y: stand.map_y }),
   }));
 }
 
 function clampPan(pan: Point, zoom: number, viewHeight: number): Point {
-  const limitX = (VIEW_WIDTH * zoom) / 2;
+  const limitX = (MAP_VIEW_WIDTH * zoom) / 2;
   const limitY = (viewHeight * zoom) / 2;
   return {
     x: Math.min(limitX, Math.max(-limitX, pan.x)),
@@ -665,5 +727,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F1ED',
     marginTop: 20,
   },
+  sheetEditButton: {
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderRadius: 10,
+    backgroundColor: '#167B71',
+    marginTop: 16,
+  },
+  sheetEditText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   sheetCloseText: { color: '#167B71', fontSize: 14, fontWeight: '700' },
 });

@@ -7,11 +7,23 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import EventMapCanvas from '../components/EventMapCanvas';
-import { MAP_MOCK_STANDS, MAP_MOCK_ZONES } from '../domain/map/mapMockData';
+import EventMapCanvas, {
+  getOccupancyFreshnessLabel,
+  type OccupancyDataSource,
+} from '../components/EventMapCanvas';
+import {
+  MAP_MOCK_STANDS,
+  MAP_MOCK_ACCESS_LOGS,
+  MAP_MOCK_ZONES,
+} from '../domain/map/mapMockData';
+import { calculateZoneOccupancy } from '../domain/map/calculateZoneOccupancy';
 import { useMapData } from '../hooks/useMapData';
 import { useEventNotifications } from '../providers/NotificationProvider';
 import type { OrganizationAlertType } from '../domain/notifications/organizationAlert';
+
+const MAP_MOCK_ZONE_OCCUPANCIES = MAP_MOCK_ZONES.map((zone) =>
+  calculateZoneOccupancy(zone, MAP_MOCK_ACCESS_LOGS),
+);
 
 export default function MapScreen() {
   const { snapshot, loading, error, isOffline, refresh } = useMapData();
@@ -24,16 +36,13 @@ export default function MapScreen() {
   const [panning, setPanning] = useState(false);
   const hasMapData = Boolean(snapshot && (snapshot.stands.length > 0 || snapshot.zones.length > 0));
   const showMockData = __DEV__ && !loading && !error && !hasMapData;
+  const occupancyDataSource: OccupancyDataSource = showMockData ? 'demo' : 'cache';
+  const lastUpdatedAt = snapshot?.last_synced_at ?? null;
   const mapStands = showMockData ? MAP_MOCK_STANDS : (snapshot?.stands ?? []);
   const mapZones = showMockData
-    ? MAP_MOCK_ZONES
-    : (snapshot?.zones.map((zone) => zone.zone) ?? []);
-
-  const syncedAt = snapshot?.last_synced_at ? new Date(snapshot.last_synced_at) : null;
-  const timestampLabel =
-    syncedAt && !Number.isNaN(syncedAt.getTime())
-      ? `Aforo en caché · actualizado ${syncedAt.toLocaleString('es-ES')}`
-      : 'Aforo en caché · sin sincronización confirmada';
+    ? MAP_MOCK_ZONE_OCCUPANCIES
+    : (snapshot?.zones ?? []);
+  const timestampLabel = getOccupancyFreshnessLabel(occupancyDataSource, lastUpdatedAt);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -46,7 +55,7 @@ export default function MapScreen() {
           <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
             <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
             <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
-              {isOffline ? 'Sin conexión' : 'Datos en caché'}
+            {isOffline ? 'Sin conexión' : showMockData ? 'Datos de ejemplo' : 'Datos en caché'}
             </Text>
           </View>
         </View>
@@ -59,6 +68,8 @@ export default function MapScreen() {
         <EventMapCanvas
           stands={mapStands}
           zones={mapZones}
+          occupancyDataSource={occupancyDataSource}
+          lastUpdatedAt={lastUpdatedAt}
           loading={loading && !snapshot}
           demoData={showMockData}
           onPanningChange={setPanning}
@@ -126,7 +137,7 @@ export default function MapScreen() {
 
         <Text style={styles.dataNote}>
           La base de datos actual no incluye la geometría de salas ni el servicio backend de avisos.
-          Las zonas se muestran como marcadores esquemáticos.
+          Las zonas se muestran como marcadores sin geometría de contorno.
         </Text>
       </ScrollView>
 

@@ -139,6 +139,27 @@ async function runMigrations(database: SQLiteDatabase): Promise<void> {
   }
 }
 
+async function seedOccupancyEntries(
+  database: SQLiteDatabase,
+  zoneId: string,
+  count: number,
+  firstId: number,
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const placeholders = Array.from({ length: count }, () => "(?, NULL, ?, 'ENTRY', ?)").join(', ');
+  const parameters = Array.from({ length: count }, (_, index) => [
+    `00000000-0000-4000-8000-${String(firstId + index).padStart(12, '0')}`,
+    zoneId,
+    timestamp,
+  ]).flat();
+
+  await database.runAsync(
+    `INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action, timestamp)
+     VALUES ${placeholders}`,
+    ...parameters,
+  );
+}
+
 export async function seedDevData(database: SQLiteDatabase): Promise<void> {
   await database.withTransactionAsync(async () => {
     await database.execAsync(`
@@ -150,8 +171,11 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
         ('user-exhibitor-1', 'Carlos Ruiz', 'carlos@event.com', 'EXHIBITOR', 'Tech Solutions');
 
       INSERT OR IGNORE INTO zones (id, name, max_capacity, current_capacity, required_role) VALUES
-        ('zone-auditorium', 'Auditorio Principal', 200, 45, 'ATTENDEE'),
-        ('zone-vip', 'Zona VIP & Lounge', 50, 12, 'VIP');
+        ('zone-auditorium', 'Auditorio Principal', 200, 140, 'ATTENDEE'),
+        ('zone-vip', 'Zona VIP & Lounge', 50, 48, 'VIP');
+
+      UPDATE zones SET current_capacity = 140 WHERE id = 'zone-auditorium';
+      UPDATE zones SET current_capacity = 48 WHERE id = 'zone-vip';
 
       INSERT OR IGNORE INTO stands (id, name, owner_id, map_x, map_y) VALUES
         ('stand-tech', 'Tech Solutions', 'user-exhibitor-1', 10.5, 20.0),
@@ -185,6 +209,9 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
         ('${SEED_EVENTO_1_ID}', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Presentación oficial de la plataforma Your Way.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
         ('${SEED_EVENTO_2_ID}', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `);
+
+    await seedOccupancyEntries(database, 'zone-auditorium', 139, 1000);
+    await seedOccupancyEntries(database, 'zone-vip', 47, 2000);
   });
 }
 

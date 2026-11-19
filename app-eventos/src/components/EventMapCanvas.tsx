@@ -11,7 +11,7 @@ import {
   type PanResponderGestureState,
 } from 'react-native';
 import Svg, { Circle, G, Line, Rect, Text as SvgText } from 'react-native-svg';
-import type { Stand, Zone } from '../domain/map/mapTypes';
+import type { OccupancyLevel, Stand, ZoneOccupancy } from '../domain/map/mapTypes';
 
 const VIEW_WIDTH = 1000;
 const BASE_VIEW_HEIGHT = 800;
@@ -21,10 +21,20 @@ const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 3;
 const MAX_STAND_NAME_LENGTH = 22;
 const MAX_ZONE_NAME_LENGTH = 25;
+const ZONE_OCCUPANCY_COLORS: Record<OccupancyLevel, string> = {
+  available: '#2A9661',
+  medium: '#E89A2C',
+  full: '#D84F4F',
+  unavailable: '#8B9691',
+};
+
+export type OccupancyDataSource = 'realtime' | 'cache' | 'demo';
 
 interface EventMapCanvasProps {
   stands: readonly Stand[];
-  zones: readonly Zone[];
+  zones: readonly ZoneOccupancy[];
+  occupancyDataSource: OccupancyDataSource;
+  lastUpdatedAt: string | null;
   loading?: boolean;
   demoData?: boolean;
   onPanningChange?: (panning: boolean) => void;
@@ -32,7 +42,7 @@ interface EventMapCanvasProps {
 
 type SelectedMapItem =
   | { kind: 'stand'; value: Stand }
-  | { kind: 'zone'; value: Zone };
+  | { kind: 'zone'; value: ZoneOccupancy };
 
 interface Point {
   x: number;
@@ -42,6 +52,8 @@ interface Point {
 export default function EventMapCanvas({
   stands,
   zones,
+  occupancyDataSource,
+  lastUpdatedAt,
   loading = false,
   demoData = false,
   onPanningChange,
@@ -162,6 +174,9 @@ export default function EventMapCanvas({
       {demoData ? (
         <Text style={styles.demoNotice}>Datos de ejemplo para probar el mapa.</Text>
       ) : null}
+      <Text style={styles.freshnessLabel}>
+        {getOccupancyFreshnessLabel(occupancyDataSource, lastUpdatedAt)}
+      </Text>
 
       {empty ? (
         <View accessibilityLiveRegion="polite" style={styles.emptyState}>
@@ -252,12 +267,12 @@ export default function EventMapCanvas({
                   SALAS · MARCADORES SIN GEOMETRÍA
                 </SvgText>
                 {zoneMarkers.map(({ zone, x, y, width }) => (
-                  <G key={zone.id}>
+                  <G key={zone.zone.id}>
                     <Circle
                       cx={x + width / 2}
                       cy={y + 34}
-                      fill="#DCEBE5"
-                      stroke="#8DB5A5"
+                      fill={ZONE_OCCUPANCY_COLORS[zone.level]}
+                      stroke="#FFFFFF"
                       strokeWidth="2"
                       r="34"
                     />
@@ -270,7 +285,20 @@ export default function EventMapCanvas({
                       x={x + width / 2}
                       y={y + 88}
                     >
-                      {truncate(zone.name, MAX_ZONE_NAME_LENGTH)}
+                      {truncate(zone.zone.name, MAX_ZONE_NAME_LENGTH)}
+                    </SvgText>
+                    <SvgText
+                      fill="#173A35"
+                      fontSize="14"
+                      fontWeight="600"
+                      pointerEvents="none"
+                      textAnchor="middle"
+                      x={x + width / 2}
+                      y={y + 108}
+                    >
+                      {zone.level === 'unavailable'
+                        ? 'Aforo no disponible'
+                        : `${Math.round(zone.occupancy_percentage ?? 0)}% · ${getZoneStatusLabel(zone)}`}
                     </SvgText>
                   </G>
                 ))}
@@ -303,10 +331,14 @@ export default function EventMapCanvas({
                 );
                 return (
                   <Pressable
-                    key={zone.id}
+                    key={zone.zone.id}
                     accessible={true}
                     accessibilityRole="button"
-                    accessibilityLabel={`Sala: ${zone.name}. Pulsa para ver su ficha.`}
+                    accessibilityLabel={getZoneAccessibilityLabel(
+                      zone,
+                      occupancyDataSource,
+                      lastUpdatedAt,
+                    )}
                     onPress={() => setSelectedItem({ kind: 'zone', value: zone })}
                     style={[
                       styles.markerHitTarget,
@@ -318,6 +350,33 @@ export default function EventMapCanvas({
             </View>
           </View>
           <Text style={styles.gestureHint}>Arrastra el plano para desplazarte y usa + / − para el zoom.</Text>
+          <View style={styles.zoneStatusList}>
+            {zones.map((zone) => (
+              <Pressable
+                key={zone.zone.id}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={getZoneAccessibilityLabel(
+                  zone,
+                  occupancyDataSource,
+                  lastUpdatedAt,
+                )}
+                onPress={() => setSelectedItem({ kind: 'zone', value: zone })}
+                style={styles.zoneStatusItem}
+              >
+                <View
+                  style={[
+                    styles.zoneStatusDot,
+                    { backgroundColor: ZONE_OCCUPANCY_COLORS[zone.level] },
+                  ]}
+                />
+                <View style={styles.zoneStatusCopy}>
+                  <Text style={styles.zoneStatusName}>{zone.zone.name}</Text>
+                  <Text style={styles.zoneStatusDetail}>{getZoneOccupancySummary(zone)}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
           <Text style={styles.note}>
             Las salas se muestran como marcadores; el modelo actual no define coordenadas ni
             geometría para sus contornos.
@@ -346,16 +405,33 @@ export default function EventMapCanvas({
             <Text style={styles.sheetEyebrow}>
               {selectedItem?.kind === 'stand' ? 'ESTAND' : 'SALA'}
             </Text>
-            <Text style={styles.sheetTitle}>{selectedItem?.value.name}</Text>
+            <Text style={styles.sheetTitle}>
+              {selectedItem?.kind === 'stand'
+                ? selectedItem.value.name
+                : selectedItem?.value.zone.name}
+            </Text>
             {selectedItem?.kind === 'stand' ? (
               <Text style={styles.sheetDetail}>
                 Posición en el plano: {selectedItem.value.map_x}, {selectedItem.value.map_y}
               </Text>
             ) : null}
             {selectedItem?.kind === 'zone' ? (
-              <Text style={styles.sheetDetail}>
-                {getZoneOccupancySummary(selectedItem.value)}
-              </Text>
+              <>
+                <View style={styles.zoneDetailStatus}>
+                  <View
+                    style={[
+                      styles.zoneStatusDot,
+                      { backgroundColor: ZONE_OCCUPANCY_COLORS[selectedItem.value.level] },
+                    ]}
+                  />
+                  <Text style={styles.sheetDetail}>
+                    {getZoneOccupancySummary(selectedItem.value)}
+                  </Text>
+                </View>
+                <Text style={styles.sheetDetail}>
+                  {getOccupancyFreshnessLabel(occupancyDataSource, lastUpdatedAt)}
+                </Text>
+              </>
             ) : null}
             <Pressable
               accessibilityRole="button"
@@ -371,19 +447,64 @@ export default function EventMapCanvas({
   );
 }
 
-function getZoneOccupancySummary(zone: Zone): string {
+export function getOccupancyFreshnessLabel(
+  source: OccupancyDataSource,
+  lastUpdatedAt: string | null,
+): string {
+  if (source === 'realtime') {
+    return 'Aforo en tiempo real';
+  }
+  if (source === 'demo') {
+    return 'Datos de ejemplo · no sincronizados';
+  }
+  if (lastUpdatedAt === null) {
+    return 'Aforo en caché · sin sincronización confirmada';
+  }
+
+  const updatedAt = new Date(lastUpdatedAt);
+  if (Number.isNaN(updatedAt.getTime())) {
+    return 'Aforo en caché · marca de actualización no válida';
+  }
+  return `Aforo en caché · última actualización ${updatedAt.toLocaleString('es-ES')}`;
+}
+
+function getZoneOccupancySummary(zone: ZoneOccupancy): string {
   const capacity = zone.current_capacity;
-  const maximum = zone.max_capacity;
+  const maximum = zone.zone.max_capacity;
+  const percentage = zone.occupancy_percentage;
   if (
-    capacity === null ||
+    zone.level === 'unavailable' ||
+    percentage === null ||
+    !Number.isFinite(percentage) ||
     !Number.isFinite(capacity) ||
     capacity < 0 ||
     !Number.isFinite(maximum) ||
     maximum <= 0
   ) {
-    return 'Estado de aforo no disponible';
+    return 'Aforo no disponible';
   }
-  return `${capacity} / ${maximum} asistentes`;
+  return `${zone.current_capacity} / ${maximum} asistentes · ${getZoneStatusLabel(zone)} (${Math.round(percentage)}%)`;
+}
+
+function getZoneStatusLabel(zone: ZoneOccupancy): string {
+  switch (zone.level) {
+    case 'available':
+      return 'Disponible';
+    case 'medium':
+      return 'Aforo medio';
+    case 'full':
+      return 'Completo';
+    case 'unavailable':
+      return 'Aforo no disponible';
+  }
+}
+
+function getZoneAccessibilityLabel(
+  zone: ZoneOccupancy,
+  source: OccupancyDataSource,
+  lastUpdatedAt: string | null,
+): string {
+  return `Sala ${zone.zone.name}. ${getZoneOccupancySummary(zone)}. ${getOccupancyFreshnessLabel(source, lastUpdatedAt)}. Pulsa para ver la ficha.`;
 }
 
 function toViewportPoint(
@@ -464,6 +585,7 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.5 },
   zoomButtonText: { color: '#167B71', fontSize: 21, fontWeight: '600', lineHeight: 24 },
   zoomValue: { minWidth: 40, color: '#45625B', fontSize: 11, textAlign: 'center' },
+  freshnessLabel: { color: '#71827D', fontSize: 10, marginBottom: 8 },
   markerHitTarget: {
     position: 'absolute',
     width: 56,
@@ -482,6 +604,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBFDFC',
   },
   gestureHint: { color: '#71827D', fontSize: 10, marginTop: 7 },
+  zoneStatusList: { gap: 7, marginTop: 9 },
+  zoneStatusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E1EAE5',
+    backgroundColor: '#FFFFFF',
+  },
+  zoneStatusDot: { width: 12, height: 12, borderRadius: 6 },
+  zoneStatusCopy: { flex: 1, marginLeft: 9 },
+  zoneStatusName: { color: '#243E39', fontSize: 12, fontWeight: '700' },
+  zoneStatusDetail: { color: '#526B63', fontSize: 11, marginTop: 2 },
+  zoneDetailStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   note: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 5 },
   emptyState: {
     minHeight: 190,

@@ -1,4 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import {
+  MAP_MOCK_ACCESS_LOGS,
+  MAP_MOCK_STANDS,
+  MAP_MOCK_ZONES,
+} from '../domain/map/mapMockData.ts';
 
 export async function initializeDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync(`
@@ -87,6 +92,14 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
       last_synced_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS local_map_metadata (
+      scope TEXT PRIMARY KEY NOT NULL,
+      event_id TEXT REFERENCES eventos(id) ON DELETE SET NULL,
+      coordinate_system TEXT NOT NULL
+    );
+    INSERT OR IGNORE INTO local_map_metadata (scope, event_id, coordinate_system)
+      VALUES ('default', NULL, 'map-units-0-100');
+
     CREATE TABLE IF NOT EXISTS cached_notifications (
       id TEXT PRIMARY KEY NOT NULL,
       type TEXT NOT NULL
@@ -107,6 +120,8 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
 
 const SEED_EVENTO_1_ID = '00000000-0000-4000-8000-000000000001';
 const SEED_EVENTO_2_ID = '00000000-0000-4000-8000-000000000002';
+const SEED_STAND_ID = MAP_MOCK_STANDS[0].id;
+const SEED_ZONE_ID = MAP_MOCK_ZONES[0].id;
 
 /**
  * Migraciones versionadas con `PRAGMA user_version`: la posición en el array + 1 es la versión.
@@ -178,25 +193,53 @@ async function runMigrations(database: SQLiteDatabase): Promise<void> {
   }
 }
 
-async function seedOccupancyEntries(
-  database: SQLiteDatabase,
-  zoneId: string,
-  count: number,
-  firstId: number,
-): Promise<void> {
-  const timestamp = new Date().toISOString();
-  const placeholders = Array.from({ length: count }, () => "(?, NULL, ?, 'ENTRY', ?)").join(', ');
-  const parameters = Array.from({ length: count }, (_, index) => [
-    `00000000-0000-4000-8000-${String(firstId + index).padStart(12, '0')}`,
-    zoneId,
-    timestamp,
-  ]).flat();
+export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
+  const [standCount, zoneCount] = await Promise.all([
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM stands'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM zones'),
+  ]);
+  if ((standCount?.count ?? 0) > 0 || (zoneCount?.count ?? 0) > 0) {
+    return;
+  }
 
-  await database.runAsync(
-    `INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action, timestamp)
-     VALUES ${placeholders}`,
-    ...parameters,
-  );
+  await database.withTransactionAsync(async () => {
+    for (const stand of MAP_MOCK_STANDS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO stands (id, name, owner_id, map_x, map_y)
+         VALUES (?, ?, NULL, ?, ?)`,
+        stand.id,
+        stand.name,
+        stand.map_x,
+        stand.map_y,
+      );
+    }
+
+    for (const zone of MAP_MOCK_ZONES) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO zones (
+           id, name, max_capacity, current_capacity, required_role
+         ) VALUES (?, ?, ?, ?, ?)`,
+        zone.id,
+        zone.name,
+        zone.max_capacity,
+        zone.current_capacity,
+        zone.required_role,
+      );
+    }
+
+    for (const accessLog of MAP_MOCK_ACCESS_LOGS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action, timestamp)
+         VALUES (?, ?, ?, ?, ?)`,
+        accessLog.id,
+        accessLog.user_id,
+        accessLog.zone_id,
+        accessLog.action,
+        accessLog.timestamp,
+      );
+    }
+
+  });
 }
 
 export async function seedDevData(database: SQLiteDatabase): Promise<void> {
@@ -209,39 +252,24 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
         ('user-staff-1', 'Organización Your Way', 'staff@event.com', 'STAFF', 'Your Way'),
         ('user-exhibitor-1', 'Carlos Ruiz', 'carlos@event.com', 'EXHIBITOR', 'Tech Solutions');
 
-      INSERT OR IGNORE INTO zones (id, name, max_capacity, current_capacity, required_role) VALUES
-        ('zone-auditorium', 'Auditorio Principal', 200, 140, 'ATTENDEE'),
-        ('zone-vip', 'Zona VIP & Lounge', 50, 48, 'VIP');
-
-      UPDATE zones SET current_capacity = 140 WHERE id = 'zone-auditorium';
-      UPDATE zones SET current_capacity = 48 WHERE id = 'zone-vip';
-
-      INSERT OR IGNORE INTO stands (id, name, owner_id, map_x, map_y) VALUES
-        ('stand-tech', 'Tech Solutions', 'user-exhibitor-1', 10.5, 20.0),
-        ('stand-ai', 'AI & Data Lab', 'user-exhibitor-1', 30.0, 45.0);
-
       INSERT OR IGNORE INTO nfc_tags (uid, type, user_id, stand_id, zone_id) VALUES
         ('tag-user-ana', 'USER_WRISTBAND', 'user-attendee-1', NULL, NULL),
-        ('tag-stand-tech', 'STAND_POINT', NULL, 'stand-tech', NULL),
-        ('tag-zone-auditorium', 'ZONE_CHECKPOINT', NULL, NULL, 'zone-auditorium');
+        ('tag-stand-tech', 'STAND_POINT', NULL, '${SEED_STAND_ID}', NULL),
+        ('tag-zone-auditorium', 'ZONE_CHECKPOINT', NULL, NULL, '${SEED_ZONE_ID}');
 
       INSERT OR IGNORE INTO stamps (id, user_id, stand_id) VALUES
-        ('stamp-1', 'user-attendee-1', 'stand-tech'),
-        ('stamp-2', 'user-vip-1', 'stand-tech'),
-        ('stamp-3', 'user-attendee-2', 'stand-ai');
+        ('stamp-1', 'user-attendee-1', '${SEED_STAND_ID}'),
+        ('stamp-2', 'user-vip-1', '${SEED_STAND_ID}'),
+        ('stamp-3', 'user-attendee-2', '${MAP_MOCK_STANDS[1].id}');
 
       INSERT OR IGNORE INTO ratings (id, user_id, stand_id, score) VALUES
-        ('rating-1', 'user-attendee-1', 'stand-tech', 5),
-        ('rating-2', 'user-vip-1', 'stand-tech', 4),
-        ('rating-3', 'user-attendee-2', 'stand-ai', 5);
+        ('rating-1', 'user-attendee-1', '${SEED_STAND_ID}', 5),
+        ('rating-2', 'user-vip-1', '${SEED_STAND_ID}', 4),
+        ('rating-3', 'user-attendee-2', '${MAP_MOCK_STANDS[1].id}', 5);
 
       INSERT OR IGNORE INTO leads (id, scanner_user_id, scanned_user_id) VALUES
         ('lead-1', 'user-exhibitor-1', 'user-attendee-1'),
         ('lead-2', 'user-exhibitor-1', 'user-vip-1');
-
-      INSERT OR IGNORE INTO access_logs (id, user_id, zone_id, action) VALUES
-        ('access-1', 'user-attendee-1', 'zone-auditorium', 'ENTRY'),
-        ('access-2', 'user-vip-1', 'zone-vip', 'ENTRY');
 
       -- DATOS DE PRUEBA ACTUALIZADOS PARA EVENTOS
       INSERT OR IGNORE INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at) VALUES
@@ -249,14 +277,13 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
         ('${SEED_EVENTO_2_ID}', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
     `);
 
-    await seedOccupancyEntries(database, 'zone-auditorium', 139, 1000);
-    await seedOccupancyEntries(database, 'zone-vip', 47, 2000);
   });
 }
 
 export async function initializeAppDatabase(database: SQLiteDatabase): Promise<void> {
   await initializeDatabase(database);
   await runMigrations(database);
+  await seedBaseMapData(database);
   if (__DEV__) {
     await seedDevData(database);
   }

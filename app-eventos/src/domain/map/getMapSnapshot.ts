@@ -1,4 +1,4 @@
-import { calculateZoneOccupancy } from './calculateZoneOccupancy';
+import { calculateZoneOccupancy } from './calculateZoneOccupancy.ts';
 import type { AccessLog, MapSnapshot, Stand, Zone } from './mapTypes';
 
 export interface MapRepositoryPort {

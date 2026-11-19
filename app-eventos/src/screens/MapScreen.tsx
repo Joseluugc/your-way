@@ -11,24 +11,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import EventMapCanvas, {
   getOccupancyFreshnessLabel,
-  type OccupancyDataSource,
 } from '../components/EventMapCanvas';
 import NotificationCenter from '../components/NotificationCenter';
-import {
-  MAP_MOCK_STANDS,
-  MAP_MOCK_ACCESS_LOGS,
-  MAP_MOCK_ZONES,
-} from '../domain/map/mapMockData';
-import { calculateZoneOccupancy } from '../domain/map/calculateZoneOccupancy';
 import { useMapData } from '../hooks/useMapData';
 import { useEventNotifications } from '../providers/NotificationProvider';
 
-const MAP_MOCK_ZONE_OCCUPANCIES = MAP_MOCK_ZONES.map((zone) =>
-  calculateZoneOccupancy(zone, MAP_MOCK_ACCESS_LOGS),
-);
-
 export default function MapScreen() {
-  const { snapshot, loading, error, isOffline, refresh } = useMapData();
+  const {
+    snapshot,
+    loading,
+    error,
+    syncError,
+    syncStatus,
+    isOffline,
+    refresh,
+  } = useMapData();
   const {
     notifications,
     unreadCount,
@@ -45,16 +42,11 @@ export default function MapScreen() {
   const [panning, setPanning] = useState(false);
   const [notificationCenterVisible, setNotificationCenterVisible] = useState(false);
   const [permissionRationaleVisible, setPermissionRationaleVisible] = useState(false);
-  const hasMapData = Boolean(snapshot && (snapshot.stands.length > 0 || snapshot.zones.length > 0));
-  const showMockData = __DEV__ && !loading && !error && !hasMapData;
-  const occupancyDataSource: OccupancyDataSource = showMockData ? 'demo' : 'cache';
   const lastUpdatedAt = snapshot?.last_synced_at ?? null;
-  const mapStands = showMockData ? MAP_MOCK_STANDS : (snapshot?.stands ?? []);
-  const mapZones = showMockData
-    ? MAP_MOCK_ZONE_OCCUPANCIES
-    : (snapshot?.zones ?? []);
+  const mapStands = snapshot?.stands ?? [];
+  const mapZones = snapshot?.zones ?? [];
   const notificationZones = mapZones.map((occupancy) => occupancy.zone);
-  const timestampLabel = getOccupancyFreshnessLabel(occupancyDataSource, lastUpdatedAt);
+  const timestampLabel = getOccupancyFreshnessLabel('cache', lastUpdatedAt);
 
   const continuePermissionRequest = () => {
     setPermissionRationaleVisible(false);
@@ -88,7 +80,11 @@ export default function MapScreen() {
             <View style={[styles.networkBadge, isOffline && styles.offlineBadge]}>
               <View style={[styles.networkDot, isOffline && styles.offlineDot]} />
               <Text style={[styles.networkLabel, isOffline && styles.offlineLabel]}>
-                {isOffline ? 'Sin conexión' : showMockData ? 'Datos de ejemplo' : 'Datos en caché'}
+                {isOffline
+                  ? 'Sin conexión'
+                  : syncStatus === 'syncing'
+                    ? 'Sincronizando'
+                    : 'Conectado'}
               </Text>
             </View>
           </View>
@@ -96,18 +92,32 @@ export default function MapScreen() {
 
         <Text style={styles.syncLabel}>
           {timestampLabel}
-          {isOffline ? ' · último dato conocido, no es en tiempo real' : ''}
+          {isOffline ? ' · último dato conocido, no es tiempo real' : ' · actualización puntual, no tiempo real'}
         </Text>
 
         <EventMapCanvas
           stands={mapStands}
           zones={mapZones}
-          occupancyDataSource={occupancyDataSource}
+          occupancyDataSource="cache"
           lastUpdatedAt={lastUpdatedAt}
-          loading={loading && !snapshot}
-          demoData={showMockData}
+          loading={loading}
           onPanningChange={setPanning}
         />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: syncStatus === 'syncing' }}
+          disabled={syncStatus === 'syncing'}
+          onPress={refresh}
+          style={[
+            styles.syncButton,
+            syncStatus === 'syncing' && styles.disabledSyncButton,
+          ]}
+        >
+          <Text style={styles.syncButtonText}>
+            {syncStatus === 'syncing' ? 'Sincronizando mapa y aforo…' : 'Sincronizar ahora'}
+          </Text>
+        </Pressable>
 
         {error ? (
           <View style={styles.errorCard}>
@@ -115,6 +125,11 @@ export default function MapScreen() {
             <Pressable accessibilityRole="button" onPress={refresh} style={styles.retryButton}>
               <Text style={styles.retryText}>Reintentar</Text>
             </Pressable>
+          </View>
+        ) : null}
+        {syncError ? (
+          <View style={styles.syncErrorCard}>
+            <Text style={styles.syncErrorText}>{syncError}</Text>
           </View>
         ) : null}
 
@@ -294,6 +309,16 @@ const styles = StyleSheet.create({
   networkLabel: { color: '#25635A', fontSize: 10, fontWeight: '600' },
   offlineLabel: { color: '#825510' },
   syncLabel: { color: '#71827D', fontSize: 11, marginTop: 4, marginBottom: 16 },
+  syncButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#167B71',
+    borderRadius: 9,
+    marginBottom: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+  disabledSyncButton: { backgroundColor: '#91A7A0' },
+  syncButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   sectionTitle: { color: '#173A35', fontSize: 17, fontWeight: '700' },
   sectionSubtitle: { color: '#71827D', fontSize: 11, marginTop: 3 },
   errorCard: {
@@ -306,6 +331,14 @@ const styles = StyleSheet.create({
   errorText: { color: '#7D322B', fontSize: 12 },
   retryButton: { alignSelf: 'flex-start', marginTop: 8 },
   retryText: { color: '#913C32', fontSize: 12, fontWeight: '700' },
+  syncErrorCard: {
+    backgroundColor: '#FFF0D7',
+    borderLeftColor: '#C78219',
+    borderLeftWidth: 3,
+    marginTop: 8,
+    padding: 11,
+  },
+  syncErrorText: { color: '#825510', fontSize: 11, lineHeight: 16 },
   notificationCard: {
     padding: 15,
     backgroundColor: '#FFFFFF',

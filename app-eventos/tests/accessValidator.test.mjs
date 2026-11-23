@@ -12,3 +12,14 @@ for (const [userIndex, userRole] of ROLES.entries()) {
     });
   }
 }
+
+test('una zona sin rol requerido (null) es pública para todos los roles', () => {
+  for (const userRole of ROLES) {
+    assert.equal(validateZoneAccess(userRole, null), true);
+  }
+});
+
+test('un rol desconocido siempre se deniega', () => {
+  assert.equal(validateZoneAccess('ADMIN', 'ATTENDEE'), false);
+  assert.equal(validateZoneAccess('STAFF', 'ADMIN'), false);
+});

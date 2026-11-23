@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,31 +11,7 @@ import {
   MAP_MOCK_ZONES,
 } from '../src/domain/map/mapMockData.ts';
 import { syncMapAndOccupancy } from '../src/domain/map/syncMapAndOccupancy.ts';
-
-function openDatabase(path) {
-  const sqlite = new DatabaseSync(path);
-  return {
-    sqlite,
-    database: {
-      execAsync: async (sql) => sqlite.exec(sql),
-      getFirstAsync: async (sql, ...parameters) =>
-        sqlite.prepare(sql).get(...parameters) ?? null,
-      getAllAsync: async (sql, ...parameters) =>
-        sqlite.prepare(sql).all(...parameters),
-      runAsync: async (sql, ...parameters) => sqlite.prepare(sql).run(...parameters),
-      withTransactionAsync: async (operation) => {
-        sqlite.exec('BEGIN');
-        try {
-          await operation();
-          sqlite.exec('COMMIT');
-        } catch (error) {
-          sqlite.exec('ROLLBACK');
-          throw error;
-        }
-      },
-    },
-  };
-}
+import { openDatabase } from './sqliteHarness.mjs';
 
 async function initializeFreshDatabase() {
   const directory = mkdtempSync(join(tmpdir(), 'your-way-map-'));

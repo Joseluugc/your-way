@@ -1,0 +1,174 @@
+-- Spec 04: gamificación, pasaporte digital y valoración de estands
+-- (specs/004-gamification-passport/data-model.md y contracts/supabase-sync.md)
+--
+-- Idempotencia de la sync: todos los ids los genera el cliente (UUID) y cada tabla tiene su
+-- clave natural UNIQUE; el cliente sube con `upsert(..., { ignoreDuplicates: true })`,
+-- es decir, `INSERT ... ON CONFLICT DO NOTHING`. No hay policies de DELETE.
+-- Las views `stand_ranking` y `faction_scores` llegan en una tarea posterior (T066).
+
+-- Estand → zona (×2 por aforo y SECTOR_EXPLORER). Nullable: un estand sin zona no recibe bono.
+ALTER TABLE stands ADD COLUMN zone_id UUID REFERENCES zones(id) ON DELETE SET NULL;
+CREATE INDEX idx_stands_zone_id ON stands(zone_id);
+
+-- Facciones del evento (las crea la organización; el cliente solo las descarga).
+CREATE TABLE factions (
+    id UUID PRIMARY KEY,
+    evento_id UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
+    name VARCHAR(60) NOT NULL,
+    color_hex CHAR(7) NOT NULL CHECK (color_hex ~ '^#[0-9A-Fa-f]{6}$'),
+    CONSTRAINT factions_evento_name_key UNIQUE (evento_id, name)
+);
+
+CREATE TABLE attendee_factions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    evento_id UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
+    faction_id UUID NOT NULL REFERENCES factions(id),
+    assigned_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT attendee_factions_user_evento_key UNIQUE (user_id, evento_id)
+);
+CREATE INDEX idx_attendee_factions_faction_id ON attendee_factions(faction_id);
+
+CREATE TABLE stand_trivia (
+    id UUID PRIMARY KEY,
+    stand_id UUID NOT NULL UNIQUE REFERENCES stands(id) ON DELETE CASCADE,
+    question VARCHAR(200) NOT NULL CHECK (length(question) > 0),
+    options_json JSONB NOT NULL
+        CHECK (jsonb_typeof(options_json) = 'array' AND jsonb_array_length(options_json) = 3),
+    correct_option_index SMALLINT NOT NULL CHECK (correct_option_index BETWEEN 0 AND 2),
+    bonus_xp INT NOT NULL DEFAULT 50 CHECK (bonus_xp > 0)
+);
+
+CREATE TABLE user_stamps (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    stand_id UUID NOT NULL REFERENCES stands(id),
+    evento_id UUID NOT NULL REFERENCES eventos(id),
+    scanned_at TIMESTAMPTZ NOT NULL,
+    zone_level_at_scan TEXT
+        CHECK (zone_level_at_scan IN ('available', 'medium', 'full', 'unavailable')),
+    applied_multiplier NUMERIC(4,2) NOT NULL CHECK (applied_multiplier >= 1),
+    trivia_result TEXT NOT NULL
+        CHECK (trivia_result IN ('PENDING', 'CORRECT', 'WRONG', 'TIMEOUT', 'SKIPPED')),
+    trivia_answered_at TIMESTAMPTZ,
+    CONSTRAINT user_stamps_user_stand_key UNIQUE (user_id, stand_id)
+);
+CREATE INDEX idx_user_stamps_user_evento ON user_stamps(user_id, evento_id);
+CREATE INDEX idx_user_stamps_stand_id ON user_stamps(stand_id);
+
+CREATE TABLE stand_ratings (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    stand_id UUID NOT NULL REFERENCES stands(id),
+    stars SMALLINT NOT NULL CHECK (stars BETWEEN 1 AND 5),
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT stand_ratings_user_stand_key UNIQUE (user_id, stand_id)
+);
+CREATE INDEX idx_stand_ratings_stand_id ON stand_ratings(stand_id);
+
+-- Libro mayor append-only: sin policies de UPDATE ni DELETE.
+CREATE TABLE xp_transactions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    faction_id UUID REFERENCES factions(id),
+    evento_id UUID NOT NULL REFERENCES eventos(id),
+    source_type TEXT NOT NULL
+        CHECK (source_type IN ('STAMP', 'TRIVIA', 'RATING', 'ACHIEVEMENT', 'ROULETTE')),
+    reference_id UUID NOT NULL,
+    base_xp INT NOT NULL CHECK (base_xp > 0),
+    multiplier NUMERIC(4,2) NOT NULL CHECK (multiplier >= 1),
+    final_xp INT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT xp_transactions_source_reference_key UNIQUE (source_type, reference_id)
+);
+CREATE INDEX idx_xp_transactions_user_evento ON xp_transactions(user_id, evento_id);
+CREATE INDEX idx_xp_transactions_faction_id ON xp_transactions(faction_id);
+
+CREATE TABLE user_achievements (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    evento_id UUID NOT NULL REFERENCES eventos(id),
+    code TEXT NOT NULL
+        CHECK (code IN ('EARLY_BIRD', 'EXPERT_CRITIC', 'SECTOR_EXPLORER', 'SPEEDRUNNER')),
+    unlocked_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT user_achievements_user_evento_code_key UNIQUE (user_id, evento_id, code)
+);
+
+CREATE TABLE roulette_spins (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    evento_id UUID NOT NULL REFERENCES eventos(id),
+    trigger_stamp_count INT NOT NULL CHECK (trigger_stamp_count > 0),
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'SPUN', 'CONSUMED', 'CLAIMED')),
+    reward_type TEXT
+        CHECK (reward_type IN ('XP_200', 'MULTIPLIER_1_5', 'RAFFLE_TICKET', 'PHYSICAL_PRIZE')),
+    spun_at TIMESTAMPTZ,
+    resolved_at TIMESTAMPTZ,
+    CONSTRAINT roulette_spins_status_reward_check CHECK ((status = 'PENDING') = (reward_type IS NULL)),
+    CONSTRAINT roulette_spins_user_evento_trigger_key UNIQUE (user_id, evento_id, trigger_stamp_count)
+);
+
+CREATE TABLE gamification_config (
+    evento_id UUID PRIMARY KEY REFERENCES eventos(id) ON DELETE CASCADE,
+    spin_every_n_stamps INT NOT NULL DEFAULT 3 CHECK (spin_every_n_stamps >= 1),
+    roulette_weights_json JSONB NOT NULL
+        DEFAULT '{"XP_200":40,"MULTIPLIER_1_5":30,"RAFFLE_TICKET":20,"PHYSICAL_PRIZE":10}'::jsonb
+        CHECK (jsonb_typeof(roulette_weights_json) = 'object')
+);
+
+-- Copia de los datos antiguos (sin XP retroactivo). Las tablas `stamps` y `ratings` se conservan.
+INSERT INTO user_stamps (
+    id, user_id, stand_id, evento_id, scanned_at, zone_level_at_scan,
+    applied_multiplier, trivia_result, trivia_answered_at
+)
+SELECT
+    legacy.id, legacy.user_id, legacy.stand_id, stand.evento_id,
+    COALESCE(legacy.scanned_at AT TIME ZONE 'UTC', now()),
+    NULL, 1.0, 'SKIPPED', NULL
+FROM stamps AS legacy
+JOIN stands AS stand ON stand.id = legacy.stand_id
+WHERE legacy.user_id IS NOT NULL AND stand.evento_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+-- Si hay varias valoraciones del mismo usuario y estand, se conserva la más antigua.
+INSERT INTO stand_ratings (id, user_id, stand_id, stars, created_at)
+SELECT DISTINCT ON (legacy.user_id, legacy.stand_id)
+    legacy.id, legacy.user_id, legacy.stand_id, legacy.score,
+    COALESCE(legacy.created_at AT TIME ZONE 'UTC', now())
+FROM ratings AS legacy
+WHERE legacy.user_id IS NOT NULL AND legacy.stand_id IS NOT NULL AND legacy.score IS NOT NULL
+ORDER BY legacy.user_id, legacy.stand_id, legacy.created_at, legacy.id
+ON CONFLICT DO NOTHING;
+
+-- RLS: SELECT e INSERT para authenticated (incluye sesiones anónimas) en todas las tablas;
+-- UPDATE solo donde el estado avanza (trivia del sello y estado de la tirada). Sin DELETE.
+ALTER TABLE factions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendee_factions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stand_trivia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_stamps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stand_ratings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE xp_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_achievements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roulette_spins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gamification_config ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY factions_select ON factions FOR SELECT TO authenticated USING (true);
+CREATE POLICY factions_insert ON factions FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY attendee_factions_select ON attendee_factions FOR SELECT TO authenticated USING (true);
+CREATE POLICY attendee_factions_insert ON attendee_factions FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY stand_trivia_select ON stand_trivia FOR SELECT TO authenticated USING (true);
+CREATE POLICY stand_trivia_insert ON stand_trivia FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY user_stamps_select ON user_stamps FOR SELECT TO authenticated USING (true);
+CREATE POLICY user_stamps_insert ON user_stamps FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY user_stamps_update ON user_stamps FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY stand_ratings_select ON stand_ratings FOR SELECT TO authenticated USING (true);
+CREATE POLICY stand_ratings_insert ON stand_ratings FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY xp_transactions_select ON xp_transactions FOR SELECT TO authenticated USING (true);
+CREATE POLICY xp_transactions_insert ON xp_transactions FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY user_achievements_select ON user_achievements FOR SELECT TO authenticated USING (true);
+CREATE POLICY user_achievements_insert ON user_achievements FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY roulette_spins_select ON roulette_spins FOR SELECT TO authenticated USING (true);
+CREATE POLICY roulette_spins_insert ON roulette_spins FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY roulette_spins_update ON roulette_spins FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY gamification_config_select ON gamification_config FOR SELECT TO authenticated USING (true);
+CREATE POLICY gamification_config_insert ON gamification_config FOR INSERT TO authenticated WITH CHECK (true);

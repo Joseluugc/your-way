@@ -7,6 +7,8 @@ export interface ManageStandInput {
   map_x: number;
   map_y: number;
   evento_id: UUID;
+  /** Zona del estand. Vacío o `null` conserva la zona que ya tuviera guardada. */
+  zone_id?: UUID | null;
 }
 
 export interface ManageStandRepositoryPort {
@@ -46,6 +48,13 @@ export async function createOrUpdateStand(
   ) {
     throw new Error('El identificador del propietario no es válido.');
   }
+  if (
+    input.zone_id !== undefined &&
+    input.zone_id !== null &&
+    !UUID_V4_PATTERN.test(input.zone_id)
+  ) {
+    throw new Error('El identificador de la zona no es válido.');
+  }
   if (input.id !== undefined && !UUID_V4_PATTERN.test(input.id)) {
     throw new Error('El identificador del estand no es válido.');
   }
@@ -57,6 +66,7 @@ export async function createOrUpdateStand(
     map_x: input.map_x,
     map_y: input.map_y,
     evento_id: input.evento_id,
+    zone_id: input.zone_id ?? null,
     sync_status: 'PENDING',
   };
   await repository.saveStand(stand);

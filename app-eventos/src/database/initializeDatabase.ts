@@ -198,13 +198,231 @@ const MIGRATIONS: string[] = [
       WHERE evento_id IS NULL;
     CREATE INDEX idx_stands_evento_id ON stands(evento_id);
   `,
+  // 4: gamificación, pasaporte y valoración (Spec 04, data-model.md). Añade `stands.zone_id`,
+  // crea las tablas del módulo y copia `stamps`/`ratings` sin generar XP retroactivo.
+  // `stamps` y `ratings` se conservan por compatibilidad.
+  `
+    ALTER TABLE stands ADD COLUMN zone_id TEXT REFERENCES zones(id) ON DELETE SET NULL;
+    CREATE INDEX idx_stands_zone_id ON stands(zone_id);
+    ${MAP_MOCK_STANDS.filter((stand) => stand.zone_id !== null)
+      .map(
+        (stand) => `UPDATE stands SET zone_id = '${stand.zone_id}'
+      WHERE id = '${stand.id}' AND zone_id IS NULL
+        AND EXISTS (SELECT 1 FROM zones WHERE id = '${stand.zone_id}');`,
+      )
+      .join('\n    ')}
+
+    CREATE TABLE factions (
+      id TEXT PRIMARY KEY NOT NULL,
+      evento_id TEXT NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
+      name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+      color_hex TEXT NOT NULL
+        CHECK (length(color_hex) = 7 AND color_hex GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'),
+      UNIQUE (evento_id, name)
+    );
+
+    CREATE TABLE attendee_factions (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      evento_id TEXT NOT NULL,
+      faction_id TEXT NOT NULL REFERENCES factions(id),
+      assigned_at TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      UNIQUE (user_id, evento_id)
+    );
+    CREATE INDEX idx_attendee_factions_faction_id ON attendee_factions(faction_id);
+    CREATE INDEX idx_attendee_factions_synced ON attendee_factions(synced);
+
+    CREATE TABLE stand_trivia (
+      id TEXT PRIMARY KEY NOT NULL,
+      stand_id TEXT NOT NULL UNIQUE REFERENCES stands(id) ON DELETE CASCADE,
+      question TEXT NOT NULL CHECK (length(question) BETWEEN 1 AND 200),
+      options_json TEXT NOT NULL
+        CHECK (json_valid(options_json) AND json_array_length(options_json) = 3),
+      correct_option_index INTEGER NOT NULL CHECK (correct_option_index BETWEEN 0 AND 2),
+      bonus_xp INTEGER NOT NULL DEFAULT 50 CHECK (bonus_xp > 0)
+    );
+
+    CREATE TABLE user_stamps (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      stand_id TEXT NOT NULL REFERENCES stands(id),
+      evento_id TEXT NOT NULL,
+      scanned_at TEXT NOT NULL,
+      zone_level_at_scan TEXT
+        CHECK (zone_level_at_scan IS NULL
+          OR zone_level_at_scan IN ('available', 'medium', 'full', 'unavailable')),
+      applied_multiplier REAL NOT NULL CHECK (applied_multiplier >= 1),
+      trivia_result TEXT NOT NULL
+        CHECK (trivia_result IN ('PENDING', 'CORRECT', 'WRONG', 'TIMEOUT', 'SKIPPED')),
+      trivia_answered_at TEXT,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      UNIQUE (user_id, stand_id)
+    );
+    CREATE INDEX idx_user_stamps_user_evento ON user_stamps(user_id, evento_id);
+    CREATE INDEX idx_user_stamps_stand_id ON user_stamps(stand_id);
+    CREATE INDEX idx_user_stamps_synced ON user_stamps(synced);
+
+    CREATE TABLE stand_ratings (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      stand_id TEXT NOT NULL REFERENCES stands(id),
+      stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+      created_at TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      UNIQUE (user_id, stand_id)
+    );
+    CREATE INDEX idx_stand_ratings_stand_id ON stand_ratings(stand_id);
+    CREATE INDEX idx_stand_ratings_synced ON stand_ratings(synced);
+
+    CREATE TABLE xp_transactions (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      faction_id TEXT,
+      evento_id TEXT NOT NULL,
+      source_type TEXT NOT NULL
+        CHECK (source_type IN ('STAMP', 'TRIVIA', 'RATING', 'ACHIEVEMENT', 'ROULETTE')),
+      reference_id TEXT NOT NULL,
+      base_xp INTEGER NOT NULL CHECK (base_xp > 0),
+      multiplier REAL NOT NULL CHECK (multiplier >= 1),
+      final_xp INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      UNIQUE (source_type, reference_id)
+    );
+    CREATE INDEX idx_xp_transactions_user_evento ON xp_transactions(user_id, evento_id);
+    CREATE INDEX idx_xp_transactions_faction_id ON xp_transactions(faction_id);
+    CREATE INDEX idx_xp_transactions_synced ON xp_transactions(synced);
+
+    -- Libro mayor append-only: sin DELETE y sin UPDATE salvo el cambio exclusivo de synced.
+    CREATE TRIGGER xp_transactions_no_delete
+    BEFORE DELETE ON xp_transactions
+    BEGIN
+      SELECT RAISE(ABORT, 'xp_transactions es append-only: no se pueden borrar filas');
+    END;
+
+    CREATE TRIGGER xp_transactions_only_synced_update
+    BEFORE UPDATE ON xp_transactions
+    WHEN NEW.id IS NOT OLD.id
+      OR NEW.user_id IS NOT OLD.user_id
+      OR NEW.faction_id IS NOT OLD.faction_id
+      OR NEW.evento_id IS NOT OLD.evento_id
+      OR NEW.source_type IS NOT OLD.source_type
+      OR NEW.reference_id IS NOT OLD.reference_id
+      OR NEW.base_xp IS NOT OLD.base_xp
+      OR NEW.multiplier IS NOT OLD.multiplier
+      OR NEW.final_xp IS NOT OLD.final_xp
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN
+      SELECT RAISE(ABORT, 'xp_transactions es append-only: solo se puede cambiar synced');
+    END;
+
+    CREATE TABLE user_achievements (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      evento_id TEXT NOT NULL,
+      code TEXT NOT NULL
+        CHECK (code IN ('EARLY_BIRD', 'EXPERT_CRITIC', 'SECTOR_EXPLORER', 'SPEEDRUNNER')),
+      unlocked_at TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      UNIQUE (user_id, evento_id, code)
+    );
+    CREATE INDEX idx_user_achievements_synced ON user_achievements(synced);
+
+    CREATE TABLE roulette_spins (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      evento_id TEXT NOT NULL,
+      trigger_stamp_count INTEGER NOT NULL CHECK (trigger_stamp_count > 0),
+      status TEXT NOT NULL CHECK (status IN ('PENDING', 'SPUN', 'CONSUMED', 'CLAIMED')),
+      reward_type TEXT
+        CHECK (reward_type IS NULL
+          OR reward_type IN ('XP_200', 'MULTIPLIER_1_5', 'RAFFLE_TICKET', 'PHYSICAL_PRIZE')),
+      spun_at TEXT,
+      resolved_at TEXT,
+      synced INTEGER NOT NULL DEFAULT 0 CHECK (synced IN (0, 1)),
+      CHECK ((status = 'PENDING') = (reward_type IS NULL)),
+      UNIQUE (user_id, evento_id, trigger_stamp_count)
+    );
+    CREATE INDEX idx_roulette_spins_synced ON roulette_spins(synced);
+
+    CREATE TABLE gamification_config (
+      evento_id TEXT PRIMARY KEY NOT NULL,
+      spin_every_n_stamps INTEGER NOT NULL DEFAULT 3 CHECK (spin_every_n_stamps >= 1),
+      roulette_weights_json TEXT NOT NULL
+        DEFAULT '{"XP_200":40,"MULTIPLIER_1_5":30,"RAFFLE_TICKET":20,"PHYSICAL_PRIZE":10}'
+        CHECK (json_valid(roulette_weights_json))
+    );
+
+    -- Tablas solo locales (cachés).
+    CREATE TABLE zone_occupancy_cache (
+      zone_id TEXT PRIMARY KEY NOT NULL,
+      level TEXT NOT NULL CHECK (level IN ('available', 'medium', 'full', 'unavailable')),
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE flash_mission_alerts (
+      zone_id TEXT PRIMARY KEY NOT NULL,
+      last_sent_at TEXT NOT NULL
+    );
+
+    CREATE TABLE ranking_cache (
+      evento_id TEXT NOT NULL,
+      stand_id TEXT NOT NULL,
+      score REAL NOT NULL,
+      rating_count INTEGER NOT NULL DEFAULT 0,
+      average REAL,
+      stamp_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (evento_id, stand_id)
+    );
+
+    CREATE TABLE faction_score_cache (
+      evento_id TEXT NOT NULL,
+      faction_id TEXT NOT NULL,
+      total_xp INTEGER NOT NULL DEFAULT 0,
+      member_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (evento_id, faction_id)
+    );
+
+    -- Copia de los datos antiguos: ya están en el servidor (synced = 1) y no generan XP.
+    INSERT OR IGNORE INTO user_stamps (
+      id, user_id, stand_id, evento_id, scanned_at, zone_level_at_scan,
+      applied_multiplier, trivia_result, trivia_answered_at, synced
+    )
+    SELECT
+      legacy.id, legacy.user_id, legacy.stand_id, stand.evento_id,
+      COALESCE(legacy.scanned_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      NULL, 1.0, 'SKIPPED', NULL, 1
+    FROM stamps AS legacy
+    JOIN stands AS stand ON stand.id = legacy.stand_id
+    WHERE legacy.user_id IS NOT NULL AND stand.evento_id IS NOT NULL
+    ORDER BY legacy.scanned_at, legacy.id;
+
+    -- Si hay varias valoraciones del mismo usuario y estand, se conserva la más antigua.
+    INSERT OR IGNORE INTO stand_ratings (id, user_id, stand_id, stars, created_at, synced)
+    SELECT
+      legacy.id, legacy.user_id, legacy.stand_id, legacy.score,
+      COALESCE(legacy.created_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), 1
+    FROM ratings AS legacy
+    JOIN stands AS stand ON stand.id = legacy.stand_id
+    WHERE legacy.user_id IS NOT NULL AND legacy.score IS NOT NULL
+    ORDER BY legacy.created_at, legacy.id;
+  `,
 ];
 
-async function runMigrations(database: SQLiteDatabase): Promise<void> {
+/**
+ * Aplica las migraciones pendientes hasta `targetVersion` (por defecto, la última).
+ * Cada migración y su `user_version` van en la misma transacción.
+ */
+export async function runMigrations(
+  database: SQLiteDatabase,
+  targetVersion: number = MIGRATIONS.length,
+): Promise<void> {
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const current = row?.user_version ?? 0;
+  const target = Math.min(targetVersion, MIGRATIONS.length);
 
-  for (let version = current; version < MIGRATIONS.length; version += 1) {
+  for (let version = current; version < target; version += 1) {
     await database.withTransactionAsync(async () => {
       await database.execAsync(MIGRATIONS[version]);
       await database.execAsync(`PRAGMA user_version = ${version + 1}`);
@@ -238,19 +456,7 @@ export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
       );
     }
 
-    for (const stand of MAP_MOCK_STANDS) {
-      await database.runAsync(
-        `INSERT OR IGNORE INTO stands (
-           id, name, owner_id, map_x, map_y, evento_id, sync_status
-         ) VALUES (?, ?, NULL, ?, ?, ?, 'SYNCED')`,
-        stand.id,
-        stand.name,
-        stand.map_x,
-        stand.map_y,
-        stand.evento_id,
-      );
-    }
-
+    // Zonas antes que estands: `stands.zone_id` las referencia.
     for (const zone of MAP_MOCK_ZONES) {
       await database.runAsync(
         `INSERT OR IGNORE INTO zones (
@@ -261,6 +467,20 @@ export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
         zone.max_capacity,
         zone.current_capacity,
         zone.required_role,
+      );
+    }
+
+    for (const stand of MAP_MOCK_STANDS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO stands (
+           id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
+         ) VALUES (?, ?, NULL, ?, ?, ?, ?, 'SYNCED')`,
+        stand.id,
+        stand.name,
+        stand.map_x,
+        stand.map_y,
+        stand.evento_id,
+        stand.zone_id,
       );
     }
 

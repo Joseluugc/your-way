@@ -3,6 +3,7 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { initializeAppDatabase } from '../database/initializeDatabase';
 import { NotificationProvider } from '../providers/NotificationProvider';
+import { SyncProvider } from '../providers/SyncProvider';
 
 export default function RootLayout() {
   return (
@@ -11,19 +12,21 @@ export default function RootLayout() {
       onInit={initializeAppDatabase}
       options={{ enableChangeListener: true }}
     >
-      <NotificationProvider>
-        <StatusBar style="auto" />
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarActiveTintColor: '#167B71',
-            tabBarInactiveTintColor: '#71827D',
-          }}
-        >
-          <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
-          <Tabs.Screen name="mapa" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
-        </Tabs>
-      </NotificationProvider>
+      <SyncProvider>
+        <NotificationProvider>
+          <StatusBar style="auto" />
+          <Tabs
+            screenOptions={{
+              headerShown: false,
+              tabBarActiveTintColor: '#167B71',
+              tabBarInactiveTintColor: '#71827D',
+            }}
+          >
+            <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
+            <Tabs.Screen name="mapa" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
+          </Tabs>
+        </NotificationProvider>
+      </SyncProvider>
     </SQLiteProvider>
   );
 }

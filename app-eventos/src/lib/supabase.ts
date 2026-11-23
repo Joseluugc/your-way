@@ -18,3 +18,16 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * Garantiza una sesión de Supabase para que RLS permita escribir (rol `authenticated`).
+ * Reutiliza la sesión guardada; si no hay, inicia una sesión anónima.
+ */
+export async function ensureSession(): Promise<void> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (data.session) return;
+
+  const { error: signInError } = await supabase.auth.signInAnonymously();
+  if (signInError) throw signInError;
+}

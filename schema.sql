@@ -88,10 +88,31 @@ CREATE TABLE eventos (
     fecha_fin TIMESTAMPTZ NOT NULL,
     ubicacion VARCHAR(255) NOT NULL,
     descripcion TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
     CONSTRAINT eventos_rango_fechas CHECK (fecha_fin > fecha_inicio)
 );
 
 CREATE INDEX idx_eventos_fecha_inicio ON eventos(fecha_inicio);
+CREATE INDEX idx_eventos_updated_at ON eventos(updated_at);
+
+-- Sync (Spec 07): trigger y RLS en supabase/migrations/0001_eventos_sync.sql
+CREATE FUNCTION set_eventos_updated_at() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_eventos_updated_at
+BEFORE INSERT OR UPDATE ON eventos
+FOR EACH ROW EXECUTE FUNCTION set_eventos_updated_at();
+
+ALTER TABLE eventos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY eventos_select ON eventos FOR SELECT TO authenticated USING (true);
+CREATE POLICY eventos_insert ON eventos FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY eventos_update ON eventos FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 -- 10. Tabla de Notificaciones
 -- Pendiente: el contrato de notificaciones lo define la Spec 03 (tipo, contenido,

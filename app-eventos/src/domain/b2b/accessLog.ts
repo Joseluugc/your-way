@@ -69,3 +69,76 @@ export function createAccessLog(
     sync_status: ACCESS_LOG_PENDING_STATUS,
   };
 }
+
+/**
+ * Regla contra dobles conteos de aforo (Spec 03, apartado Aforo):
+ * - No se registra un ENTRY si lo último de ese usuario en esa zona ya es ENTRY.
+ * - No se registra un EXIT si no consta una entrada previa sin salida.
+ */
+export type AccessSequenceViolation = 'ALREADY_INSIDE' | 'NOT_INSIDE';
+
+const VIOLATION_MESSAGES: Record<AccessSequenceViolation, string> = {
+  ALREADY_INSIDE: 'La persona ya está dentro de esta zona.',
+  NOT_INSIDE: 'No consta la entrada de esta persona en esta zona.',
+};
+
+export class AccessSequenceError extends Error {
+  readonly violation: AccessSequenceViolation;
+
+  constructor(violation: AccessSequenceViolation) {
+    super(VIOLATION_MESSAGES[violation]);
+    this.name = 'AccessSequenceError';
+    this.violation = violation;
+  }
+}
+
+export interface PreviousAccessLog {
+  id: UUID;
+  action: AccessAction;
+  timestamp: string | null;
+}
+
+// SQLite guarda CURRENT_TIMESTAMP como "YYYY-MM-DD HH:MM:SS" (UTC) y nosotros
+// ISO 8601: como texto no se ordenan bien, así que se comparan instantes.
+// Las horas ausentes o inválidas van al final.
+function timestampValue(timestamp: string | null): number {
+  if (!timestamp) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(timestamp)
+    ? `${timestamp.replace(' ', 'T')}Z`
+    : timestamp;
+  const value = Date.parse(normalized);
+  return Number.isNaN(value) ? Number.POSITIVE_INFINITY : value;
+}
+
+/** Última acción registrada, ordenando por hora real (y por id si empatan). */
+export function getLastAccessAction(previousLogs: readonly PreviousAccessLog[]): AccessAction | null {
+  if (previousLogs.length === 0) {
+    return null;
+  }
+  const sorted = [...previousLogs].sort((first, second) => {
+    const firstTime = timestampValue(first.timestamp);
+    const secondTime = timestampValue(second.timestamp);
+    if (firstTime !== secondTime) {
+      return firstTime < secondTime ? -1 : 1;
+    }
+    return first.id < second.id ? -1 : first.id > second.id ? 1 : 0;
+  });
+  return sorted[sorted.length - 1].action;
+}
+
+/** Devuelve el motivo por el que no se puede registrar la acción, o null si es válida. */
+export function checkAccessSequence(
+  previousLogs: readonly PreviousAccessLog[],
+  action: AccessAction,
+): AccessSequenceViolation | null {
+  const lastAction = getLastAccessAction(previousLogs);
+  if (action === 'ENTRY' && lastAction === 'ENTRY') {
+    return 'ALREADY_INSIDE';
+  }
+  if (action === 'EXIT' && lastAction !== 'ENTRY') {
+    return 'NOT_INSIDE';
+  }
+  return null;
+}

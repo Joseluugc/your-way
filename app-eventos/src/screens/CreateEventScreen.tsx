@@ -180,11 +180,12 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
         <Text style={styles.label}>Título del evento *</Text>
         <TextInput
           style={styles.input}
+          accessibilityLabel="Título del evento, obligatorio"
           value={titulo}
           onChangeText={setTitulo}
           onFocus={cerrarTodosLosPickers}
           placeholder="Ej. Conferencia Tech"
-          placeholderTextColor="#91A19B"
+          placeholderTextColor="#5A6A64"
         />
 
         <DateTimeField
@@ -236,26 +237,34 @@ export default function CreateEventScreen({ onClose }: { onClose?: () => void })
         <Text style={styles.label}>Ubicación *</Text>
         <TextInput
           style={styles.input}
+          accessibilityLabel="Ubicación, obligatoria"
           value={ubicacion}
           onChangeText={setUbicacion}
           onFocus={cerrarTodosLosPickers}
           placeholder="Ej. Auditorio Principal"
-          placeholderTextColor="#91A19B"
+          placeholderTextColor="#5A6A64"
         />
 
         <Text style={styles.label}>Descripción</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
+          accessibilityLabel="Descripción, opcional"
           value={descripcion}
           onChangeText={setDescripcion}
           onFocus={cerrarTodosLosPickers}
           placeholder="Añade detalles..."
-          placeholderTextColor="#91A19B"
+          placeholderTextColor="#5A6A64"
           multiline
           numberOfLines={4}
         />
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleGuardarEvento} activeOpacity={0.8}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Guardar evento"
+          style={styles.submitButton}
+          onPress={handleGuardarEvento}
+          activeOpacity={0.8}
+        >
           <Text style={styles.submitButtonText}>Guardar Evento</Text>
         </TouchableOpacity>
     </ScrollView>
@@ -266,8 +275,8 @@ const styles = StyleSheet.create({
   container: { padding: 20, backgroundColor: '#FFFFFF', flexGrow: 1 },
   sectionHeader: { fontSize: 15, fontWeight: '700', color: '#173A35', marginTop: 6, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: '#E5EBE8', paddingBottom: 6 },
   label: { fontSize: 13, marginBottom: 6, fontWeight: '600', color: '#304A44' },
-  input: { borderWidth: 1, borderColor: '#DFE7E3', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 15, backgroundColor: '#F8FAF9', color: '#173A35' },
+  input: { borderWidth: 1, borderColor: '#7E8E88', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 15, backgroundColor: '#F8FAF9', color: '#173A35' },
   textArea: { height: 90, textAlignVertical: 'top' },
-  submitButton: { backgroundColor: '#167B71', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 12, marginBottom: 20 },
+  submitButton: { backgroundColor: '#13695F', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 12, marginBottom: 20 },
   submitButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });

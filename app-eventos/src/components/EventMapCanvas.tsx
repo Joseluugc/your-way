@@ -17,9 +17,10 @@ import {
   mapCoordinatesToViewportPoint,
   MAP_VIEW_WIDTH,
 } from '../domain/map/mapCoordinates';
+import { getOccupancyStatus } from '../domain/map/occupancyStatus';
+import OccupancyIndicator from './OccupancyIndicator';
 import type {
   MapCoordinates,
-  OccupancyLevel,
   Stand,
   ZoneOccupancy,
 } from '../domain/map/mapTypes';
@@ -31,12 +32,6 @@ const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 3;
 const MAX_STAND_NAME_LENGTH = 22;
 const MAX_ZONE_NAME_LENGTH = 25;
-const ZONE_OCCUPANCY_COLORS: Record<OccupancyLevel, string> = {
-  available: '#2A9661',
-  medium: '#E89A2C',
-  full: '#D84F4F',
-  unavailable: '#8B9691',
-};
 
 export type OccupancyDataSource = 'realtime' | 'cache' | 'demo';
 
@@ -200,7 +195,7 @@ export default function EventMapCanvas({
 
       {empty ? (
         <View accessibilityLiveRegion="polite" style={styles.emptyState}>
-          {loading ? <ActivityIndicator color="#167B71" /> : null}
+          {loading ? <ActivityIndicator color="#13695F" /> : null}
           <Text style={styles.emptyTitle}>
             {loading ? 'Cargando el plano…' : 'Todavía no hay elementos en el mapa'}
           </Text>
@@ -220,10 +215,12 @@ export default function EventMapCanvas({
               })
             }
             {...panResponder.panHandlers}
+            accessibilityRole="image"
+            accessibilityLabel="Plano 2D interactivo con estands y salas"
+            accessibilityHint="Arrastra para desplazarte. Usa los botones de zoom y la lista de salas para recorrerlo con el lector de pantalla"
             style={styles.mapFrame}
           >
             <Svg
-              accessibilityLabel="Plano 2D interactivo con estands y salas"
               height="100%"
               pointerEvents="none"
               viewBox={`0 0 ${MAP_VIEW_WIDTH} ${viewHeight}`}
@@ -256,7 +253,7 @@ export default function EventMapCanvas({
                   />
                 ))}
 
-                <SvgText fill="#71827D" fontSize="19" fontWeight="700" x="48" y="46">
+                <SvgText fill="#5A6A64" fontSize="19" fontWeight="700" x="48" y="46">
                   ESTANDS
                 </SvgText>
                 {positionedStands.map(({ stand, x, y }) => (
@@ -264,7 +261,7 @@ export default function EventMapCanvas({
                     <Circle
                       cx={x}
                       cy={y}
-                      fill="#167B71"
+                      fill="#13695F"
                       r="28"
                       stroke="#FFFFFF"
                       strokeWidth="5"
@@ -293,7 +290,7 @@ export default function EventMapCanvas({
                   />
                 ) : null}
 
-                <SvgText fill="#71827D" fontSize="19" fontWeight="700" x="48" y="635">
+                <SvgText fill="#5A6A64" fontSize="19" fontWeight="700" x="48" y="635">
                   SALAS · MARCADORES SIN GEOMETRÍA
                 </SvgText>
                 {zoneMarkers.map(({ zone, x, y, width }) => (
@@ -301,11 +298,22 @@ export default function EventMapCanvas({
                     <Circle
                       cx={x + width / 2}
                       cy={y + 34}
-                      fill={ZONE_OCCUPANCY_COLORS[zone.level]}
+                      fill={getOccupancyStatus(zone.level).color}
                       stroke="#FFFFFF"
                       strokeWidth="2"
                       r="34"
                     />
+                    <SvgText
+                      fill="#FFFFFF"
+                      fontSize="30"
+                      fontWeight="800"
+                      pointerEvents="none"
+                      textAnchor="middle"
+                      x={x + width / 2}
+                      y={y + 45}
+                    >
+                      {getOccupancyStatus(zone.level).icon}
+                    </SvgText>
                     <SvgText
                       fill="#173A35"
                       fontSize="17"
@@ -327,7 +335,7 @@ export default function EventMapCanvas({
                       y={y + 108}
                     >
                       {zone.level === 'unavailable'
-                        ? 'Aforo no disponible'
+                        ? getOccupancyStatus('unavailable').label
                         : `${Math.round(zone.occupancy_percentage ?? 0)}% · ${getZoneStatusLabel(zone)}`}
                     </SvgText>
                   </G>
@@ -422,12 +430,7 @@ export default function EventMapCanvas({
                 onPress={() => setSelectedItem({ kind: 'zone', value: zone })}
                 style={styles.zoneStatusItem}
               >
-                <View
-                  style={[
-                    styles.zoneStatusDot,
-                    { backgroundColor: ZONE_OCCUPANCY_COLORS[zone.level] },
-                  ]}
-                />
+                <OccupancyIndicator level={zone.level} />
                 <View style={styles.zoneStatusCopy}>
                   <Text style={styles.zoneStatusName}>{zone.zone.name}</Text>
                   <Text style={styles.zoneStatusDetail}>{getZoneOccupancySummary(zone)}</Text>
@@ -454,9 +457,11 @@ export default function EventMapCanvas({
           onPress={() => setSelectedItem(null)}
           style={styles.modalScrim}
         >
-          <Pressable
+          {/* Captura los toques para que tocar dentro de la ficha no la cierre. Es un View (no un
+              Pressable) para que el lector de pantalla recorra sus botones por separado. */}
+          <View
             accessibilityViewIsModal
-            onPress={(event) => event.stopPropagation()}
+            onStartShouldSetResponder={() => true}
             style={styles.detailSheet}
           >
             <View style={styles.sheetHandle} />
@@ -476,12 +481,7 @@ export default function EventMapCanvas({
             {selectedItem?.kind === 'zone' ? (
               <>
                 <View style={styles.zoneDetailStatus}>
-                  <View
-                    style={[
-                      styles.zoneStatusDot,
-                      { backgroundColor: ZONE_OCCUPANCY_COLORS[selectedItem.value.level] },
-                    ]}
-                  />
+                  <OccupancyIndicator level={selectedItem.value.level} />
                   <Text style={styles.sheetDetail}>
                     {getZoneOccupancySummary(selectedItem.value)}
                   </Text>
@@ -494,6 +494,7 @@ export default function EventMapCanvas({
             {managementMode && selectedItem?.kind === 'stand' && onEditStand ? (
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel={`Editar ubicación y datos del estand ${selectedItem.value.name}`}
                 onPress={() => {
                   onEditStand(selectedItem.value);
                   setSelectedItem(null);
@@ -505,12 +506,13 @@ export default function EventMapCanvas({
             ) : null}
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Cerrar ficha"
               onPress={() => setSelectedItem(null)}
               style={styles.sheetCloseButton}
             >
               <Text style={styles.sheetCloseText}>Cerrar</Text>
             </Pressable>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     </View>
@@ -551,22 +553,13 @@ function getZoneOccupancySummary(zone: ZoneOccupancy): string {
     !Number.isFinite(maximum) ||
     maximum <= 0
   ) {
-    return 'Aforo no disponible';
+    return getOccupancyStatus('unavailable').label;
   }
   return `${zone.current_capacity} / ${maximum} asistentes · ${getZoneStatusLabel(zone)} (${Math.round(percentage)}%)`;
 }
 
 function getZoneStatusLabel(zone: ZoneOccupancy): string {
-  switch (zone.level) {
-    case 'available':
-      return 'Disponible';
-    case 'medium':
-      return 'Aforo medio';
-    case 'full':
-      return 'Completo';
-    case 'unavailable':
-      return 'Aforo no disponible';
-  }
+  return getOccupancyStatus(zone.level).label;
 }
 
 function getZoneAccessibilityLabel(
@@ -632,7 +625,7 @@ const styles = StyleSheet.create({
   },
   headingCopy: { flex: 1, paddingRight: 8 },
   title: { color: '#173A35', fontSize: 17, fontWeight: '700' },
-  subtitle: { color: '#71827D', fontSize: 11, marginTop: 3 },
+  subtitle: { color: '#5A6A64', fontSize: 11, marginTop: 3 },
   zoomControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   zoomButton: {
     width: 34,
@@ -642,12 +635,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: '#DCE6E1',
+    borderColor: '#7E8E88',
   },
   disabledButton: { opacity: 0.5 },
-  zoomButtonText: { color: '#167B71', fontSize: 21, fontWeight: '600', lineHeight: 24 },
+  zoomButtonText: { color: '#13695F', fontSize: 21, fontWeight: '600', lineHeight: 24 },
   zoomValue: { minWidth: 40, color: '#45625B', fontSize: 11, textAlign: 'center' },
-  freshnessLabel: { color: '#71827D', fontSize: 10, marginBottom: 8 },
+  freshnessLabel: { color: '#5A6A64', fontSize: 10, marginBottom: 8 },
   markerHitTarget: {
     position: 'absolute',
     width: 56,
@@ -662,10 +655,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#DCE6E1',
+    borderColor: '#7E8E88',
     backgroundColor: '#FBFDFC',
   },
-  gestureHint: { color: '#71827D', fontSize: 10, marginTop: 7 },
+  gestureHint: { color: '#5A6A64', fontSize: 10, marginTop: 7 },
   zoneStatusList: { gap: 7, marginTop: 9 },
   zoneStatusItem: {
     flexDirection: 'row',
@@ -674,15 +667,14 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E1EAE5',
+    borderColor: '#7E8E88',
     backgroundColor: '#FFFFFF',
   },
-  zoneStatusDot: { width: 12, height: 12, borderRadius: 6 },
   zoneStatusCopy: { flex: 1, marginLeft: 9 },
   zoneStatusName: { color: '#243E39', fontSize: 12, fontWeight: '700' },
   zoneStatusDetail: { color: '#526B63', fontSize: 11, marginTop: 2 },
   zoneDetailStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  note: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 5 },
+  note: { color: '#5A6A64', fontSize: 10, lineHeight: 15, marginTop: 5 },
   emptyState: {
     minHeight: 190,
     alignItems: 'center',
@@ -695,7 +687,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBFDFC',
   },
   emptyTitle: { color: '#243E39', fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 10 },
-  emptyDescription: { color: '#71827D', fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 5 },
+  emptyDescription: { color: '#5A6A64', fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 5 },
   modalScrim: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -717,7 +709,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 18,
   },
-  sheetEyebrow: { color: '#167B71', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  sheetEyebrow: { color: '#13695F', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   sheetTitle: { color: '#173A35', fontSize: 22, fontWeight: '700', marginTop: 5 },
   sheetDetail: { color: '#526B63', fontSize: 13, lineHeight: 20, marginTop: 8 },
   sheetCloseButton: {
@@ -731,9 +723,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 13,
     borderRadius: 10,
-    backgroundColor: '#167B71',
+    backgroundColor: '#13695F',
     marginTop: 16,
   },
   sheetEditText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  sheetCloseText: { color: '#167B71', fontSize: 14, fontWeight: '700' },
+  sheetCloseText: { color: '#13695F', fontSize: 14, fontWeight: '700' },
 });

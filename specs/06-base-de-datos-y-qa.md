@@ -3,7 +3,7 @@
 **Owner:** @Javi
 **Rama:** `Javi`
 **Issue:** TASK-13 (#13) · Prioridad Alta · 2 puntos
-**Estado:** 🟢 En Desarrollo
+**Estado:** 🟡 En revisión (pendientes las comprobaciones manuales marcadas abajo)
 **Épica en GitHub Projects:** #Epic-06
 **Depende de:** Spec 01 (SQLite local), Spec 03 (mapa y aforo), Spec 07 (patrón de sincronización con Supabase)
 **Desbloquea:** TASK-14 (despliegue de la base central y datos semilla)
@@ -44,21 +44,21 @@ Esta spec fija tres cosas:
 - **Para** que cualquier miembro pueda recrear la base de la demo y que los datos creados offline se sincronicen sin colisiones ni conflictos sin resolver
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] Existe `supabase/migrations/0003_core_audit.sql` y se ejecuta sin errores en el SQL Editor de Supabase sobre una base con `0001` y `0002` aplicadas.
-- [ ] Las 8 tablas principales (`users`, `nfc_tags`, `stands`, `zones`, `stamps`, `ratings`, `leads`, `access_logs`) tienen clave primaria UUID con valor por defecto `gen_random_uuid()` (v4). `nfc_tags` conserva `uid` (UID físico de la etiqueta) como clave natural `UNIQUE` y añade `id UUID` como clave primaria.
-- [ ] Las 8 tablas tienen `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` y `deleted_at TIMESTAMPTZ` (NULL = activo).
-- [ ] Un trigger `BEFORE INSERT OR UPDATE` asigna `updated_at = now()` en las 8 tablas; un `updated_at` enviado por el cliente se ignora.
-- [ ] Cada tabla tiene un índice sobre `updated_at` (cursor de bajada incremental).
-- [ ] RLS activado en las 8 tablas, con policies `SELECT`, `INSERT` y `UPDATE` para `authenticated` y sin policy de `DELETE` (borrado lógico, como en Spec 07).
-- [ ] `schema.sql` refleja el esquema resultante.
-- [ ] Existe `supabase/seed.sql`, idempotente (`INSERT … ON CONFLICT (id) DO NOTHING`, UUID fijos), que carga al menos:
+- [ ] Existe `supabase/migrations/0003_core_audit.sql` y se ejecuta sin errores en el SQL Editor de Supabase sobre una base con `0001` y `0002` aplicadas. *(Verificado sobre PostgreSQL 17 con PGlite; falta ejecutarlo en el Supabase del equipo.)*
+- [x] Las 8 tablas principales (`users`, `nfc_tags`, `stands`, `zones`, `stamps`, `ratings`, `leads`, `access_logs`) tienen clave primaria UUID con valor por defecto `gen_random_uuid()` (v4). `nfc_tags` conserva `uid` (UID físico de la etiqueta) como clave natural `UNIQUE` y añade `id UUID` como clave primaria.
+- [x] Las 8 tablas tienen `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` y `deleted_at TIMESTAMPTZ` (NULL = activo).
+- [x] Un trigger `BEFORE INSERT OR UPDATE` asigna `updated_at = now()` en las 8 tablas; un `updated_at` enviado por el cliente se ignora.
+- [x] Cada tabla tiene un índice sobre `updated_at` (cursor de bajada incremental).
+- [x] RLS activado en las 8 tablas, con policies `SELECT`, `INSERT` y `UPDATE` para `authenticated` y sin policy de `DELETE` (borrado lógico, como en Spec 07).
+- [x] `schema.sql` refleja el esquema resultante.
+- [x] Existe `supabase/seed.sql`, idempotente (`INSERT … ON CONFLICT (id) DO NOTHING`, UUID fijos), que carga al menos:
     - 10 usuarios: 5 `ATTENDEE`, 2 `VIP`, 2 `STAFF`, 1 `EXHIBITOR`;
     - 3 zonas con `max_capacity` y `required_role` (una general, una VIP y una STAFF);
     - 4 estands con coordenadas dentro del plano;
     - etiquetas NFC: una `USER_WRISTBAND` por usuario, una `STAND_POINT` por estand y una `ZONE_CHECKPOINT` por zona, con UIDs documentados en una tabla de la sección 3.
-- [ ] Ejecutar `seed.sql` dos veces seguidas no duplica filas.
-- [ ] La base local en modo desarrollo carga los mismos UUID que `seed.sql` (mediante una migración en `initializeDatabase.ts`), de modo que un dispositivo y Supabase identifican igual a cada usuario, zona y estand.
-- [ ] Un test con `sqliteHarness.mjs` comprueba que una base con la versión anterior de `user_version` migra sin perder filas.
+- [x] Ejecutar `seed.sql` dos veces seguidas no duplica filas.
+- [x] La base local en modo desarrollo carga los mismos UUID que `seed.sql` (mediante una migración en `initializeDatabase.ts`), de modo que un dispositivo y Supabase identifican igual a cada usuario, zona y estand.
+- [x] Un test con `sqliteHarness.mjs` comprueba que una base con la versión anterior de `user_version` migra sin perder filas.
 
 ### [US-06.2] Suite de pruebas automatizadas de QA
 - **Como** miembro del equipo que integra en `main`
@@ -66,15 +66,15 @@ Esta spec fija tres cosas:
 - **Para** detectar regresiones antes de cada Pull Request y poder trazar cada test a su Historia de Usuario
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] Jest (preset `jest-expo`) y `@testing-library/react-native` se instalan con `npx expo install` y se ejecutan con `npm test`. La suite `npm run test:domain` (`node:test`) se mantiene.
-- [ ] **Control de acceso por rol y zona:** tests que cubren acceso permitido, acceso denegado por rol insuficiente y zona sin `required_role`, para los 4 roles.
-- [ ] **Aforo en tiempo real:** tests de `calculateZoneOccupancy` en los umbrales exactos (69,9 %, 70 %, 94,9 %, 95 %, 100 %), con zona sin capacidad válida (`unavailable`) y con más salidas que entradas.
-- [ ] **Sellos sin duplicados:** un segundo escaneo del mismo usuario en el mismo estand no crea otro sello, ni en SQLite ni al subirlo (restricción `UNIQUE (user_id, stand_id)`).
-- [ ] **Cola de sincronización offline → online:** tests que comprueban que una fila creada sin red queda `pending`; que tras una subida correcta pasa a `synced`; que un fallo de red la deja `pending`; que una fila remota no sobrescribe una local `pending`; y que repetir la sincronización no duplica filas.
-- [ ] **Componentes:** tests con React Native Testing Library de `CreateEventScreen` (validación de campos y de rango de fechas) y del semáforo de aforo (texto e icono por nivel).
-- [ ] Cada test lleva en su nombre la Historia de Usuario que valida, por ejemplo `[US-03.2] marca la zona como llena al 95 %`.
-- [ ] Cobertura mínima medida con `jest --coverage`: **≥ 80 % de líneas en `src/domain/`** y **≥ 60 % de líneas en el total del proyecto**. El umbral se configura en `coverageThreshold` para que la suite falle si no se alcanza.
-- [ ] `npm test`, `npm run test:domain`, `npx tsc --noEmit` y `npm run lint` pasan antes de cada Pull Request a `main`.
+- [x] Jest (preset `jest-expo`) y `@testing-library/react-native` se instalan con `npx expo install` y se ejecutan con `npm test`. La suite `npm run test:domain` (`node:test`) se mantiene.
+- [x] **Control de acceso por rol y zona:** tests que cubren acceso permitido, acceso denegado por rol insuficiente y zona sin `required_role`, para los 4 roles.
+- [x] **Aforo en tiempo real:** tests de `calculateZoneOccupancy` en los umbrales exactos (69,9 %, 70 %, 94,9 %, 95 %, 100 %), con zona sin capacidad válida (`unavailable`) y con más salidas que entradas.
+- [x] **Sellos sin duplicados:** un segundo escaneo del mismo usuario en el mismo estand no crea otro sello, ni en SQLite ni al subirlo (restricción `UNIQUE (user_id, stand_id)`). *(La subida se prueba con un doble del remoto: el adaptador real de sellos llega con la Spec 04.)*
+- [x] **Cola de sincronización offline → online:** tests que comprueban que una fila creada sin red queda `pending`; que tras una subida correcta pasa a `synced`; que un fallo de red la deja `pending`; que una fila remota no sobrescribe una local `pending`; y que repetir la sincronización no duplica filas.
+- [x] **Componentes:** tests con React Native Testing Library de `CreateEventScreen` (validación de campos y de rango de fechas) y del semáforo de aforo (texto e icono por nivel).
+- [x] Cada test lleva en su nombre la Historia de Usuario que valida, por ejemplo `[US-03.2] marca la zona como llena al 95 %`.
+- [x] Cobertura mínima medida con `jest --coverage`: **≥ 80 % de líneas en `src/domain/`** y **≥ 60 % de líneas en el total del proyecto**. El umbral se configura en `coverageThreshold` para que la suite falle si no se alcanza.
+- [x] `npm test`, `npm run test:domain`, `npx tsc --noEmit` y `npm run lint` pasan antes de cada Pull Request a `main`.
 
 ### [US-06.3] Validación de accesibilidad y feedback háptico
 - **Como** asistente con baja visión, daltonismo o que usa lector de pantalla
@@ -82,16 +82,16 @@ Esta spec fija tres cosas:
 - **Para** poder moverme por el evento y saber el resultado de cada lectura en igualdad de condiciones
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] **Contraste:** todo texto alcanza una relación de contraste ≥ 4,5:1 con su fondo (WCAG 2.1 AA, criterio 1.4.3); el texto grande (≥ 18 pt, o ≥ 14 pt en negrita) y los iconos y bordes de controles alcanzan ≥ 3:1 (criterio 1.4.11). Se verifica con una función de dominio que calcula la relación de contraste de cada par de colores definidos en los estilos, con su test.
-- [ ] **Semáforo de aforo sin depender del color:** cada nivel (`available`, `medium`, `full`, `unavailable`) muestra, además del color, un icono distinto y un texto ("Disponible", "Ocupación media", "Completo", "Sin datos").
+- [x] **Contraste:** todo texto alcanza una relación de contraste ≥ 4,5:1 con su fondo (WCAG 2.1 AA, criterio 1.4.3); el texto grande (≥ 18 pt, o ≥ 14 pt en negrita) y los iconos y bordes de controles alcanzan ≥ 3:1 (criterio 1.4.11). Se verifica con una función de dominio que calcula la relación de contraste de cada par de colores definidos en los estilos, con su test.
+- [x] **Semáforo de aforo sin depender del color:** cada nivel (`available`, `medium`, `full`, `unavailable`) muestra, además del color, un icono distinto y un texto ("Disponible", "Ocupación media", "Completo", "Sin datos").
 - [ ] **Daltonismo:** con la simulación de protanopía, deuteranopía y tritanopía (herramienta "Emulate vision deficiencies" de Chrome DevTools sobre la versión web), los 4 niveles del semáforo se distinguen entre sí por su icono y su texto. Se adjuntan las capturas a la Pull Request.
-- [ ] **Vibración diferenciada** con `expo-haptics`, mediante una función de dominio pura que asocia cada resultado a un patrón (verificando la API contra la documentación de Expo SDK 58):
+- [x] **Vibración diferenciada** con `expo-haptics`, mediante una función de dominio pura que asocia cada resultado a un patrón (verificando la API contra la documentación de Expo SDK 58):
     - lectura NFC correcta → notificación de éxito;
     - acceso denegado → notificación de error;
     - error de lectura → notificación de aviso.
-- [ ] La función de patrones está probada para los 3 resultados, y la vibración nunca es el único aviso: cada resultado también se muestra en pantalla y se anuncia al lector de pantalla.
-- [ ] **Lector de pantalla:** todo componente interactivo (botones, campos de fecha, estands y zonas del mapa, filas de eventos) tiene `accessibilityRole` y `accessibilityLabel` en español; las acciones no evidentes tienen `accessibilityHint` (por ejemplo, "mantén pulsado para eliminar").
-- [ ] Un test de React Native Testing Library recorre las pantallas `index`, `mapa` y el formulario de evento y falla si algún elemento pulsable carece de `accessibilityLabel`.
+- [x] La función de patrones está probada para los 3 resultados, y la vibración nunca es el único aviso: cada resultado también se muestra en pantalla y se anuncia al lector de pantalla.
+- [x] **Lector de pantalla:** todo componente interactivo (botones, campos de fecha, estands y zonas del mapa, filas de eventos) tiene `accessibilityRole` y `accessibilityLabel` en español; las acciones no evidentes tienen `accessibilityHint` (por ejemplo, "mantén pulsado para eliminar").
+- [x] Un test de React Native Testing Library recorre las pantallas `index`, `mapa` y el formulario de evento y falla si algún elemento pulsable carece de `accessibilityLabel`.
 - [ ] Prueba manual con TalkBack (Android) o VoiceOver (iOS): crear un evento y consultar el aforo de una zona sin mirar la pantalla. El resultado se anota en la Pull Request.
 
 ## 3. Consideraciones Técnicas

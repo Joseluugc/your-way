@@ -6,10 +6,15 @@ export type ZoneRole = 'ATTENDEE' | 'EXHIBITOR' | 'VIP' | 'STAFF';
 /**
  * Valida si el rol de un usuario tiene permiso para entrar a una zona específica.
  * @param userRole El rol del asistente escaneado.
- * @param requiredZoneRole El rol mínimo exigido por la zona/puerta.
+ * @param requiredZoneRole El rol mínimo exigido por la zona/puerta. `null` = zona abierta a todos
+ *   (`zones.required_role` admite NULL).
  * @returns boolean - true (Acceso Permitido) o false (Acceso Denegado)
  */
-export function validateZoneAccess(userRole: UserRole, requiredZoneRole: ZoneRole): boolean {
+export function validateZoneAccess(userRole: UserRole, requiredZoneRole: ZoneRole | null): boolean {
+  if (requiredZoneRole === null) {
+    return true;
+  }
+
   // Definimos la jerarquía de roles (mayor número = más permisos)
   const roleHierarchy: Record<UserRole, number> = {
     'ATTENDEE': 1,   // Asistente normal (solo zonas públicas)

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   DEMO_EVENTO,
@@ -16,7 +17,8 @@ import {
 } from '../src/database/initializeDatabase.ts';
 import { createTempDatabase } from './sqliteHarness.mjs';
 
-const SEED_SQL = readFileSync(new URL('../../supabase/seed.sql', import.meta.url), 'utf8');
+// Ruta desde app-eventos/, donde se ejecutan tanto `npm run test:domain` como Jest.
+const SEED_SQL = readFileSync(join(process.cwd(), '..', 'supabase', 'seed.sql'), 'utf8');
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EVENTO_ID = '00000000-0000-4000-8000-000000000001';
 const USER_1 = '850e8400-e29b-41d4-a716-000000000001';

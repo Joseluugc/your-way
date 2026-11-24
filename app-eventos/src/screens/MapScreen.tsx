@@ -174,6 +174,8 @@ export default function MapScreen() {
               <Pressable
                 key={event.id}
                 accessibilityRole="button"
+                accessibilityLabel={`Evento ${event.titulo}`}
+                accessibilityHint="Muestra en el plano los estands de este evento"
                 accessibilityState={{ selected: activeEventId === event.id }}
                 onPress={() => setActiveEventId(event.id)}
                 style={[
@@ -200,6 +202,9 @@ export default function MapScreen() {
                 <Pressable
                   key={role}
                   accessibilityRole="button"
+                  accessibilityLabel={
+                    role === 'STAFF' ? 'Rol STAFF: gestionar estands' : 'Rol ATTENDEE: solo consulta'
+                  }
                   accessibilityState={{ selected: activeRole === role }}
                   onPress={() => {
                     setActiveRole(role);
@@ -225,6 +230,8 @@ export default function MapScreen() {
           {activeRole === 'STAFF' ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Añadir estand"
+              accessibilityState={{ disabled: !activeEventId }}
               disabled={!activeEventId}
               onPress={startNewStand}
               style={[styles.addStandButton, !activeEventId && styles.disabledSyncButton]}
@@ -270,6 +277,10 @@ export default function MapScreen() {
             <View style={styles.standFormActions}>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel={
+                  placingStandLocation ? 'Cancelar la elección de ubicación' : 'Elegir ubicación en el plano'
+                }
+                accessibilityHint="Después, toca el plano en el punto donde estará el estand"
                 onPress={() => setPlacingStandLocation((placing) => !placing)}
                 style={[
                   styles.locationButton,
@@ -282,6 +293,8 @@ export default function MapScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="Guardar estand"
+                accessibilityState={{ disabled: savingStand, busy: savingStand }}
                 disabled={savingStand}
                 onPress={() => void saveStand()}
                 style={[styles.saveStandButton, savingStand && styles.disabledSyncButton]}
@@ -292,6 +305,7 @@ export default function MapScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="Cancelar la edición del estand"
                 onPress={() => {
                   setStandDraft(null);
                   setPlacingStandLocation(false);
@@ -337,6 +351,7 @@ export default function MapScreen() {
 
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Sincronizar ahora el mapa y el aforo"
           accessibilityState={{ disabled: syncStatus === 'syncing' }}
           disabled={syncStatus === 'syncing'}
           onPress={refresh}
@@ -353,7 +368,12 @@ export default function MapScreen() {
         {error ? (
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable accessibilityRole="button" onPress={refresh} style={styles.retryButton}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Reintentar la carga del mapa"
+              onPress={refresh}
+              style={styles.retryButton}
+            >
               <Text style={styles.retryText}>Reintentar</Text>
             </Pressable>
           </View>
@@ -374,6 +394,7 @@ export default function MapScreen() {
             </View>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={`Ver avisos del evento. ${unreadCount} sin leer`}
               onPress={() => setNotificationCenterVisible(true)}
               style={styles.viewNotificationsButton}
             >
@@ -399,6 +420,7 @@ export default function MapScreen() {
               <View style={styles.permissionActions}>
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="Volver a pedir permiso de notificaciones"
                   onPress={() => setPermissionRationaleVisible(true)}
                   style={styles.enableButton}
                 >
@@ -407,6 +429,7 @@ export default function MapScreen() {
                 {Platform.OS !== 'web' ? (
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel="Abrir los ajustes del sistema"
                     onPress={() => void openSettings()}
                     style={styles.settingsButton}
                   >
@@ -423,6 +446,7 @@ export default function MapScreen() {
           ) : (
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Activar avisos del sistema"
               onPress={() => setPermissionRationaleVisible(true)}
               style={styles.enableButton}
             >
@@ -470,6 +494,7 @@ export default function MapScreen() {
             <View style={styles.rationaleActions}>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="Ahora no activar las notificaciones"
                 onPress={() => setPermissionRationaleVisible(false)}
                 style={styles.cancelButton}
               >
@@ -477,6 +502,7 @@ export default function MapScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="Continuar y pedir permiso de notificaciones"
                 onPress={continuePermissionRequest}
                 style={styles.enableButton}
               >
@@ -504,7 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: '#E3EBE7',
+    borderColor: '#7E8E88',
     padding: 12,
     marginTop: 10,
     marginBottom: 8,
@@ -512,30 +538,30 @@ const styles = StyleSheet.create({
   selectorLabel: { color: '#526B63', fontSize: 10, fontWeight: '700' },
   selectorOptions: { gap: 7, paddingVertical: 8 },
   selectorOption: {
-    borderColor: '#DCE6E1',
+    borderColor: '#7E8E88',
     borderWidth: 1,
     borderRadius: 9,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  selectedSelectorOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  selectedSelectorOption: { backgroundColor: '#E2EFEB', borderColor: '#13695F' },
   selectorOptionText: { color: '#526B63', fontSize: 11, fontWeight: '600' },
-  selectedSelectorOptionText: { color: '#167B71', fontWeight: '700' },
+  selectedSelectorOptionText: { color: '#13695F', fontWeight: '700' },
   roleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 },
   roleOptions: { flexDirection: 'row', gap: 6 },
-  roleOption: { borderWidth: 1, borderColor: '#DCE6E1', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
-  selectedRoleOption: { backgroundColor: '#E2EFEB', borderColor: '#167B71' },
+  roleOption: { borderWidth: 1, borderColor: '#7E8E88', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  selectedRoleOption: { backgroundColor: '#E2EFEB', borderColor: '#13695F' },
   roleOptionText: { color: '#526B63', fontSize: 10, fontWeight: '600' },
   addStandButton: {
     alignSelf: 'flex-start',
     marginTop: 10,
-    backgroundColor: '#167B71',
+    backgroundColor: '#13695F',
     borderRadius: 8,
     paddingHorizontal: 11,
     paddingVertical: 8,
   },
   addStandButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  roleHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 8 },
+  roleHint: { color: '#5A6A64', fontSize: 10, lineHeight: 15, marginTop: 8 },
   standForm: {
     backgroundColor: '#FFFFFF',
     borderColor: '#C9D8D1',
@@ -548,7 +574,7 @@ const styles = StyleSheet.create({
   standInput: {
     color: '#243E39',
     backgroundColor: '#FBFDFC',
-    borderColor: '#DCE6E1',
+    borderColor: '#7E8E88',
     borderWidth: 1,
     borderRadius: 8,
     fontSize: 12,
@@ -566,7 +592,7 @@ const styles = StyleSheet.create({
   },
   locationButtonActive: { backgroundColor: '#E89A2C' },
   locationButtonText: { color: '#704B11', fontSize: 10, fontWeight: '700' },
-  saveStandButton: { backgroundColor: '#167B71', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9 },
+  saveStandButton: { backgroundColor: '#13695F', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9 },
   saveStandText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
   cancelStandButton: { paddingHorizontal: 8, paddingVertical: 9 },
   cancelStandText: { color: '#526B63', fontSize: 10, fontWeight: '700' },
@@ -576,7 +602,7 @@ const styles = StyleSheet.create({
   bellButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderColor: '#E3EBE7',
+    borderColor: '#7E8E88',
     borderRadius: 18,
     borderWidth: 1,
     height: 38,
@@ -606,14 +632,14 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   offlineBadge: { backgroundColor: '#FFF0D7' },
-  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 5 },
+  networkDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#13695F', marginRight: 5 },
   offlineDot: { backgroundColor: '#C78219' },
   networkLabel: { color: '#25635A', fontSize: 10, fontWeight: '600' },
   offlineLabel: { color: '#825510' },
-  syncLabel: { color: '#71827D', fontSize: 11, marginTop: 4, marginBottom: 16 },
+  syncLabel: { color: '#5A6A64', fontSize: 11, marginTop: 4, marginBottom: 16 },
   syncButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#167B71',
+    backgroundColor: '#13695F',
     borderRadius: 9,
     marginBottom: 12,
     paddingHorizontal: 13,
@@ -622,7 +648,7 @@ const styles = StyleSheet.create({
   disabledSyncButton: { backgroundColor: '#91A7A0' },
   syncButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   sectionTitle: { color: '#173A35', fontSize: 17, fontWeight: '700' },
-  sectionSubtitle: { color: '#71827D', fontSize: 11, marginTop: 3 },
+  sectionSubtitle: { color: '#5A6A64', fontSize: 11, marginTop: 3 },
   errorCard: {
     borderLeftWidth: 3,
     borderLeftColor: '#C94F43',
@@ -646,7 +672,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E3EBE7',
+    borderColor: '#7E8E88',
     marginTop: 4,
   },
   notificationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -657,9 +683,9 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: '#E2EFEB',
   },
-  viewNotificationsText: { color: '#167B71', fontSize: 11, fontWeight: '700' },
-  permissionEnabled: { color: '#167B71', fontSize: 11, fontWeight: '700', marginTop: 8 },
-  permissionHint: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 9 },
+  viewNotificationsText: { color: '#13695F', fontSize: 11, fontWeight: '700' },
+  permissionEnabled: { color: '#13695F', fontSize: 11, fontWeight: '700', marginTop: 8 },
+  permissionHint: { color: '#5A6A64', fontSize: 10, lineHeight: 15, marginTop: 9 },
   warningText: { color: '#8B5C13', fontSize: 11, lineHeight: 16, marginTop: 8 },
   permissionActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   enableButton: {
@@ -667,7 +693,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 9,
-    backgroundColor: '#167B71',
+    backgroundColor: '#13695F',
   },
   enableButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   settingsButton: {
@@ -678,7 +704,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   settingsButtonText: { color: '#526B63', fontSize: 11, fontWeight: '700' },
-  dataNote: { color: '#71827D', fontSize: 10, lineHeight: 15, marginTop: 13 },
+  dataNote: { color: '#5A6A64', fontSize: 10, lineHeight: 15, marginTop: 13 },
   rationaleBackdrop: {
     flex: 1,
     justifyContent: 'center',

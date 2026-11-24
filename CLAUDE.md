@@ -30,6 +30,7 @@ Hexagonal / DDD, flujo `app → screens → hooks → database | sync → domain
 - `src/domain/` — lógica pura, **sin imports de React Native ni Expo** (los tests la ejecutan con Node). Define puertos (`MapRepositoryPort`, `MapRemoteDataSource`…) que implementan `database/` y `sync/`.
 - `src/database/` — esquema y migraciones locales en `initializeDatabase.ts` (`your-way-v2.db`), repositorios SQLite.
 - `src/sync/` + `src/lib/supabase.ts` — adaptadores Supabase. `ensureSession()` inicia sesión anónima para que RLS (`authenticated`) permita escribir.
+- `src/modules/gamification/` — (Spec 04, pendiente) módulo autocontenido con capas `domain` / `application` / `infrastructure` / `presentation`; solo se comunica con otros módulos por eventos (`src/shared/events/eventBus.ts`) y por `IRankingProjectionPort`.
 - `src/providers/` — `SyncProvider` (sincroniza al montar y al recuperar conexión con `expo-network`) y `NotificationProvider`. Ambos dentro de `SQLiteProvider` en `_layout.tsx`.
 
 ## Sincronización offline-first
@@ -51,5 +52,5 @@ Hexagonal / DDD, flujo `app → screens → hooks → database | sync → domain
 - TypeScript `strict`, sin `any`. Código, comentarios, commits y UI en español.
 - Commits: descripción en infinitivo + referencia a la historia, p. ej. `implementar X [US-03.5]`.
 - Ramas por persona/feature; a `main` solo por Pull Request.
-- Especificaciones en `specs/` (01, 03, 07 implementadas o en desarrollo; 05 B2B/NFC pendiente). Skills de Spec Kit en `.github/skills/` (enlazadas desde `app-eventos/.claude/skills`).
+- Especificaciones en `specs/` (01, 03, 07 implementadas o en desarrollo; 05 B2B/NFC pendiente; 04 gamificación pendiente). Skills de Spec Kit en `.github/skills/` (enlazadas desde `app-eventos/.claude/skills`).
 - El NFC requiere dispositivo físico y development build; `react-native-nfc-manager` todavía no está instalado.

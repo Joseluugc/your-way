@@ -1,83 +1,125 @@
--- Habilitar extensión para UUIDs en PostgreSQL
+-- Esquema base de la base central (Supabase / PostgreSQL).
+-- Refleja el resultado de aplicar supabase/migrations/0001, 0002 y 0003 sobre el esquema inicial.
+-- Datos de la demo: supabase/seed.sql.
+
+-- Extensión usada por el valor por defecto de `eventos.id`.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Auditoría (Spec 06): `updated_at` lo fija siempre el servidor.
+CREATE FUNCTION set_updated_at() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- Las 8 tablas principales llevan UUID v4 y columnas de auditoría:
+--   created_at, updated_at (cursor de sincronización) y deleted_at (borrado lógico, NULL = activo).
 
 -- 1. Usuarios y Roles
 CREATE TYPE user_role AS ENUM ('ATTENDEE', 'VIP', 'STAFF', 'EXHIBITOR');
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     role user_role NOT NULL DEFAULT 'ATTENDEE',
     company VARCHAR(100),
     linkedin_url VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
--- 2. Estands de Expositores
+-- 2. Estands de Expositores (evento_id y zone_id se añaden más abajo, tras eventos y zones)
 CREATE TABLE stands (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
     owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
     map_x FLOAT NOT NULL,
-    map_y FLOAT NOT NULL
+    map_y FLOAT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 -- 3. Zonas y Control de Aforo
 CREATE TABLE zones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
     max_capacity INT NOT NULL,
     current_capacity INT DEFAULT 0,
-    required_role user_role DEFAULT 'ATTENDEE'
+    required_role user_role DEFAULT 'ATTENDEE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 -- 4. Hardware NFC (Pulseras, Estands y Puertas)
+--    `id` es la clave primaria; `uid` es el UID físico de la etiqueta (clave natural).
 CREATE TYPE nfc_type AS ENUM ('USER_WRISTBAND', 'STAND_POINT', 'ZONE_CHECKPOINT');
 
 CREATE TABLE nfc_tags (
-    uid VARCHAR(50) PRIMARY KEY,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    uid VARCHAR(50) NOT NULL,
     type nfc_type NOT NULL,
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     stand_id UUID REFERENCES stands(id) ON DELETE CASCADE,
-    zone_id UUID REFERENCES zones(id) ON DELETE CASCADE
+    zone_id UUID REFERENCES zones(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT nfc_tags_pkey PRIMARY KEY (id),
+    CONSTRAINT nfc_tags_uid_key UNIQUE (uid)
 );
 
 -- 5. Transaccional: Sellos de Gamificación
 CREATE TABLE stamps (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     stand_id UUID REFERENCES stands(id) ON DELETE CASCADE,
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
     CONSTRAINT unique_user_stand_stamp UNIQUE (user_id, stand_id)
 );
 
 -- 6. Transaccional: Valoraciones de Estands
 CREATE TABLE ratings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     stand_id UUID REFERENCES stands(id) ON DELETE CASCADE,
     score INT CHECK (score BETWEEN 1 AND 5),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 -- 7. Transaccional: Intercambio de Contactos P2B / P2P
 CREATE TABLE leads (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     scanner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     scanned_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 -- 8. Transaccional: Logs de Aforo por Zona
 CREATE TYPE access_action AS ENUM ('ENTRY', 'EXIT');
 
 CREATE TABLE access_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     zone_id UUID REFERENCES zones(id) ON DELETE CASCADE,
     action access_action NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 -- 9. Tabla Eventos (agenda del evento; espejo de la tabla local SQLite `eventos`)
@@ -113,6 +155,41 @@ ALTER TABLE eventos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY eventos_select ON eventos FOR SELECT TO authenticated USING (true);
 CREATE POLICY eventos_insert ON eventos FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY eventos_update ON eventos FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- Estand → evento (Spec 03; asegurado en 0003_core_audit.sql)
+ALTER TABLE stands ADD COLUMN evento_id UUID REFERENCES eventos(id) ON DELETE SET NULL;
+CREATE INDEX idx_stands_evento_id ON stands(evento_id);
+
+-- Sincronización de las 8 tablas principales (Spec 06, 0003_core_audit.sql):
+-- trigger de updated_at, índice del cursor y RLS (SELECT, INSERT, UPDATE; sin DELETE).
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'users', 'nfc_tags', 'stands', 'zones', 'stamps', 'ratings', 'leads', 'access_logs'
+  ]
+  LOOP
+    EXECUTE format(
+      'CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON %I '
+      'FOR EACH ROW EXECUTE FUNCTION set_updated_at()',
+      'trg_' || t || '_updated_at', t
+    );
+    EXECUTE format('CREATE INDEX %I ON %I (updated_at)', 'idx_' || t || '_updated_at', t);
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON %I FOR SELECT TO authenticated USING (true)', t || '_select', t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON %I FOR INSERT TO authenticated WITH CHECK (true)', t || '_insert', t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON %I FOR UPDATE TO authenticated USING (true) WITH CHECK (true)',
+      t || '_update', t
+    );
+  END LOOP;
+END;
+$$;
 
 -- 10. Tabla de Notificaciones
 -- Pendiente: el contrato de notificaciones lo define la Spec 03 (tipo, contenido,

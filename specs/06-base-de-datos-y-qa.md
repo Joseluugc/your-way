@@ -112,13 +112,13 @@ Esta spec fija tres cosas:
 
 ### UIDs NFC de la demo
 
-Los UIDs se fijan en `seed.sql` y se documentan en `supabase/README.md` con este formato, para grabar las etiquetas físicas antes de la demo:
+Los UIDs se fijan en `supabase/seed.sql` (fuente: `app-eventos/src/database/demoSeedData.ts`). La tabla completa, con cada usuario, estand y zona asignados, está en [`supabase/README.md`](../supabase/README.md).
 
-| UID | Tipo | Asignado a |
-| --- | --- | --- |
-| `04:A1:00:00:00:01` … | `USER_WRISTBAND` | un usuario cada una |
-| `04:B1:00:00:00:01` … | `STAND_POINT` | un estand cada una |
-| `04:C1:00:00:00:01` … | `ZONE_CHECKPOINT` | una zona cada una |
+| UID | Tipo | Cantidad | Asignado a |
+| --- | --- | --- | --- |
+| `04:A1:00:00:00:01` – `04:A1:00:00:00:0A` | `USER_WRISTBAND` | 10 | un usuario cada una |
+| `04:B1:00:00:00:01` – `04:B1:00:00:00:04` | `STAND_POINT` | 4 | un estand cada una |
+| `04:C1:00:00:00:01` – `04:C1:00:00:00:03` | `ZONE_CHECKPOINT` | 3 | una zona cada una |
 
 ### Tecnologías y librerías
 

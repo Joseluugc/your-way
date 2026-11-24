@@ -5,6 +5,13 @@ import {
   MAP_MOCK_ZONES,
   MAP_SEED_EVENTS,
 } from '../domain/map/mapMockData.ts';
+import {
+  DEMO_EVENTO,
+  DEMO_NFC_TAGS,
+  DEMO_STANDS,
+  DEMO_USERS,
+  DEMO_ZONES,
+} from './demoSeedData.ts';
 
 export async function initializeDatabase(database: SQLiteDatabase): Promise<void> {
   await database.execAsync(`
@@ -121,8 +128,6 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
 
 const SEED_EVENTO_1_ID = '00000000-0000-4000-8000-000000000001';
 const SEED_EVENTO_2_ID = '00000000-0000-4000-8000-000000000002';
-const SEED_STAND_ID = MAP_MOCK_STANDS[0].id;
-const SEED_ZONE_ID = MAP_MOCK_ZONES[0].id;
 
 /**
  * Migraciones versionadas con `PRAGMA user_version`: la posición en el array + 1 es la versión.
@@ -408,6 +413,31 @@ const MIGRATIONS: string[] = [
     WHERE legacy.user_id IS NOT NULL AND legacy.score IS NOT NULL
     ORDER BY legacy.created_at, legacy.id;
   `,
+  // 5: `nfc_tags` pasa a tener `id` UUID como clave primaria y `uid` como clave natural UNIQUE,
+  // igual que en Supabase (0003_core_audit.sql). Las etiquetas existentes reciben un UUID v4.
+  `
+    CREATE TABLE nfc_tags_v5 (
+      id TEXT PRIMARY KEY NOT NULL,
+      uid TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL CHECK (type IN ('USER_WRISTBAND', 'STAND_POINT', 'ZONE_CHECKPOINT')),
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      stand_id TEXT REFERENCES stands(id) ON DELETE CASCADE,
+      zone_id TEXT REFERENCES zones(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO nfc_tags_v5 (id, uid, type, user_id, stand_id, zone_id)
+    SELECT
+      lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
+        || substr(lower(hex(randomblob(2))), 2) || '-'
+        || substr('89ab', 1 + (abs(random()) % 4), 1)
+        || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+      uid, type, user_id, stand_id, zone_id
+    FROM nfc_tags;
+
+    DROP TABLE nfc_tags;
+    ALTER TABLE nfc_tags_v5 RENAME TO nfc_tags;
+    CREATE INDEX idx_nfc_tags_user_id ON nfc_tags(user_id);
+  `,
 ];
 
 /**
@@ -498,41 +528,76 @@ export async function seedBaseMapData(database: SQLiteDatabase): Promise<void> {
   });
 }
 
+/**
+ * Datos de la demo en vivo (Spec 06, US-06.1), solo en modo desarrollo.
+ * Usa los mismos UUID fijos que `supabase/seed.sql` (fuente: `demoSeedData.ts`).
+ * Idempotente: `INSERT OR IGNORE` por clave primaria.
+ */
 export async function seedDevData(database: SQLiteDatabase): Promise<void> {
   await database.withTransactionAsync(async () => {
-    await database.execAsync(`
-      INSERT OR IGNORE INTO users (id, name, email, role, company) VALUES
-        ('user-attendee-1', 'Ana Gómez', 'ana@event.com', 'ATTENDEE', NULL),
-        ('user-attendee-2', 'Luis Martín', 'luis@event.com', 'ATTENDEE', NULL),
-        ('user-vip-1', 'María López', 'maria@event.com', 'VIP', NULL),
-        ('user-staff-1', 'Organización Your Way', 'staff@event.com', 'STAFF', 'Your Way'),
-        ('user-exhibitor-1', 'Carlos Ruiz', 'carlos@event.com', 'EXHIBITOR', 'Tech Solutions');
+    await database.runAsync(
+      `INSERT OR IGNORE INTO eventos (
+         id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at, sync_status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      DEMO_EVENTO.id,
+      DEMO_EVENTO.titulo,
+      DEMO_EVENTO.fecha_inicio,
+      DEMO_EVENTO.fecha_fin,
+      DEMO_EVENTO.ubicacion,
+      DEMO_EVENTO.descripcion,
+      new Date().toISOString(),
+    );
 
-      INSERT OR IGNORE INTO nfc_tags (uid, type, user_id, stand_id, zone_id) VALUES
-        ('tag-user-ana', 'USER_WRISTBAND', 'user-attendee-1', NULL, NULL),
-        ('tag-stand-tech', 'STAND_POINT', NULL, '${SEED_STAND_ID}', NULL),
-        ('tag-zone-auditorium', 'ZONE_CHECKPOINT', NULL, NULL, '${SEED_ZONE_ID}');
+    for (const user of DEMO_USERS) {
+      await database.runAsync(
+        'INSERT OR IGNORE INTO users (id, name, email, role, company) VALUES (?, ?, ?, ?, ?)',
+        user.id,
+        user.name,
+        user.email,
+        user.role,
+        user.company,
+      );
+    }
 
-      INSERT OR IGNORE INTO stamps (id, user_id, stand_id) VALUES
-        ('stamp-1', 'user-attendee-1', '${SEED_STAND_ID}'),
-        ('stamp-2', 'user-vip-1', '${SEED_STAND_ID}'),
-        ('stamp-3', 'user-attendee-2', '${MAP_MOCK_STANDS[1].id}');
+    for (const zone of DEMO_ZONES) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO zones (id, name, max_capacity, current_capacity, required_role)
+         VALUES (?, ?, ?, 0, ?)`,
+        zone.id,
+        zone.name,
+        zone.max_capacity,
+        zone.required_role,
+      );
+    }
 
-      INSERT OR IGNORE INTO ratings (id, user_id, stand_id, score) VALUES
-        ('rating-1', 'user-attendee-1', '${SEED_STAND_ID}', 5),
-        ('rating-2', 'user-vip-1', '${SEED_STAND_ID}', 4),
-        ('rating-3', 'user-attendee-2', '${MAP_MOCK_STANDS[1].id}', 5);
+    // Ya están en Supabase tras ejecutar seed.sql: no hay nada que subir.
+    for (const stand of DEMO_STANDS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO stands (
+           id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SYNCED')`,
+        stand.id,
+        stand.name,
+        stand.owner_id,
+        stand.map_x,
+        stand.map_y,
+        stand.evento_id,
+        stand.zone_id,
+      );
+    }
 
-      INSERT OR IGNORE INTO leads (id, scanner_user_id, scanned_user_id) VALUES
-        ('lead-1', 'user-exhibitor-1', 'user-attendee-1'),
-        ('lead-2', 'user-exhibitor-1', 'user-vip-1');
-
-      -- DATOS DE PRUEBA ACTUALIZADOS PARA EVENTOS
-      INSERT OR IGNORE INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at) VALUES
-        ('${SEED_EVENTO_1_ID}', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Presentación oficial de la plataforma Your Way.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        ('${SEED_EVENTO_2_ID}', 'Taller de Networking', '2026-11-15T12:30:00.000Z', '2026-11-15T14:00:00.000Z', 'Zona VIP & Lounge', 'Sesión exclusiva de networking para expositores y VIPs.', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
-    `);
-
+    for (const tag of DEMO_NFC_TAGS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO nfc_tags (id, uid, type, user_id, stand_id, zone_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        tag.id,
+        tag.uid,
+        tag.type,
+        tag.user_id,
+        tag.stand_id,
+        tag.zone_id,
+      );
+    }
   });
 }
 

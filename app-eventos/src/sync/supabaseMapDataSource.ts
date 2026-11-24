@@ -15,7 +15,7 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
   async fetchSnapshot(): Promise<RemoteMapSnapshot> {
     await ensureSession();
     const [standRows, zoneRows, accessLogRows] = await Promise.all([
-      fetchTableRows('stands', 'id, name, owner_id, map_x, map_y, evento_id'),
+      fetchTableRows('stands', 'id, name, owner_id, map_x, map_y, evento_id, zone_id'),
       fetchTableRows('zones', 'id, name, max_capacity, current_capacity, required_role'),
       fetchTableRows('access_logs', 'id, user_id, zone_id, action, timestamp'),
     ]);
@@ -42,13 +42,14 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
     }
 
     await ensureSession();
-    const rows = stands.map(({ id, name, owner_id, map_x, map_y, evento_id }) => ({
+    const rows = stands.map(({ id, name, owner_id, map_x, map_y, evento_id, zone_id }) => ({
       id,
       name,
       owner_id,
       map_x,
       map_y,
       evento_id,
+      zone_id,
     }));
     const { error } = await supabase.from('stands').upsert(rows, { onConflict: 'id' });
     if (error) {
@@ -113,7 +114,8 @@ function parseStand(value: unknown): Stand {
     !Number.isFinite(value.map_x) ||
     typeof value.map_y !== 'number' ||
     !Number.isFinite(value.map_y) ||
-    !isUuid(value.evento_id)
+    !isUuid(value.evento_id) ||
+    !isNullableUuid(value.zone_id)
   ) {
     throw new Error('La respuesta remota contiene un estand con datos inválidos.');
   }
@@ -125,6 +127,7 @@ function parseStand(value: unknown): Stand {
     map_x: value.map_x,
     map_y: value.map_y,
     evento_id: value.evento_id,
+    zone_id: value.zone_id,
     sync_status: 'SYNCED',
   };
 }

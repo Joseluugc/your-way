@@ -10,6 +10,8 @@ export interface Stand {
   map_x: number;
   map_y: number;
   evento_id: UUID;
+  /** Zona del recinto donde está el estand (Spec 04: ×2 por aforo y SECTOR_EXPLORER). */
+  zone_id: UUID | null;
   sync_status: StandSyncStatus;
 }
 

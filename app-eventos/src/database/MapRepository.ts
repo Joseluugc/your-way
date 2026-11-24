@@ -20,14 +20,14 @@ export class MapRepository implements MapSyncRepositoryPort {
   getStands(eventId?: string | null): Promise<Stand[]> {
     if (!eventId) {
       return this.database.getAllAsync<Stand>(`
-        SELECT id, name, owner_id, map_x, map_y, evento_id, sync_status
+        SELECT id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
         FROM stands
         ORDER BY name COLLATE NOCASE
       `);
     }
 
     return this.database.getAllAsync<Stand>(
-      `SELECT id, name, owner_id, map_x, map_y, evento_id, sync_status
+      `SELECT id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
        FROM stands
        WHERE evento_id = ?
        ORDER BY name COLLATE NOCASE`,
@@ -47,7 +47,7 @@ export class MapRepository implements MapSyncRepositoryPort {
 
   getPendingStands(): Promise<Stand[]> {
     return this.database.getAllAsync<Stand>(`
-      SELECT id, name, owner_id, map_x, map_y, evento_id, sync_status
+      SELECT id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
       FROM stands
       WHERE sync_status = 'PENDING'
       ORDER BY name COLLATE NOCASE
@@ -67,16 +67,19 @@ export class MapRepository implements MapSyncRepositoryPort {
       }
     }
 
+    // Un `zone_id` nulo conserva la zona guardada: todavía no hay UI para asignarla
+    // (Spec 04, research.md R14), y editar un estand no debe quitársela.
     await this.database.runAsync(
       `INSERT INTO stands (
-         id, name, owner_id, map_x, map_y, evento_id, sync_status
-       ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+         id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
          owner_id = excluded.owner_id,
          map_x = excluded.map_x,
          map_y = excluded.map_y,
          evento_id = excluded.evento_id,
+         zone_id = COALESCE(excluded.zone_id, stands.zone_id),
          sync_status = 'PENDING'`,
       stand.id,
       stand.name,
@@ -84,6 +87,7 @@ export class MapRepository implements MapSyncRepositoryPort {
       stand.map_x,
       stand.map_y,
       stand.evento_id,
+      stand.zone_id,
     );
   }
 
@@ -158,28 +162,7 @@ export class MapRepository implements MapSyncRepositoryPort {
         );
       }
 
-      for (const stand of snapshot.stands) {
-        await this.database.runAsync(
-          `INSERT INTO stands (
-             id, name, owner_id, map_x, map_y, evento_id, sync_status
-           ) VALUES (?, ?, ?, ?, ?, ?, 'SYNCED')
-           ON CONFLICT(id) DO UPDATE SET
-             name = excluded.name,
-             owner_id = excluded.owner_id,
-             map_x = excluded.map_x,
-             map_y = excluded.map_y,
-             evento_id = excluded.evento_id,
-             sync_status = 'SYNCED'
-           WHERE stands.sync_status != 'PENDING'`,
-          stand.id,
-          stand.name,
-          stand.owner_id,
-          stand.map_x,
-          stand.map_y,
-          stand.evento_id,
-        );
-      }
-
+      // Zonas antes que estands: `stands.zone_id` las referencia.
       for (const zone of snapshot.zones) {
         await this.database.runAsync(
           `INSERT INTO zones (id, name, max_capacity, current_capacity, required_role)
@@ -194,6 +177,30 @@ export class MapRepository implements MapSyncRepositoryPort {
           zone.max_capacity,
           zone.current_capacity,
           zone.required_role,
+        );
+      }
+
+      for (const stand of snapshot.stands) {
+        await this.database.runAsync(
+          `INSERT INTO stands (
+             id, name, owner_id, map_x, map_y, evento_id, zone_id, sync_status
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SYNCED')
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             owner_id = excluded.owner_id,
+             map_x = excluded.map_x,
+             map_y = excluded.map_y,
+             evento_id = excluded.evento_id,
+             zone_id = COALESCE(excluded.zone_id, stands.zone_id),
+             sync_status = 'SYNCED'
+           WHERE stands.sync_status != 'PENDING'`,
+          stand.id,
+          stand.name,
+          stand.owner_id,
+          stand.map_x,
+          stand.map_y,
+          stand.evento_id,
+          stand.zone_id,
         );
       }
 

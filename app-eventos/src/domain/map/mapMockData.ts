@@ -41,6 +41,7 @@ export const MAP_MOCK_STANDS: Stand[] = [
     map_x: 12.5,
     map_y: 18,
     evento_id: MAP_SEED_EVENT_IDS[0],
+    zone_id: '550e8400-e29b-41d4-a716-446655440011',
     sync_status: 'SYNCED',
   },
   {
@@ -50,6 +51,7 @@ export const MAP_MOCK_STANDS: Stand[] = [
     map_x: 38,
     map_y: 31.5,
     evento_id: MAP_SEED_EVENT_IDS[0],
+    zone_id: '550e8400-e29b-41d4-a716-446655440012',
     sync_status: 'SYNCED',
   },
   {
@@ -59,6 +61,7 @@ export const MAP_MOCK_STANDS: Stand[] = [
     map_x: 68,
     map_y: 22,
     evento_id: MAP_SEED_EVENT_IDS[1],
+    zone_id: '550e8400-e29b-41d4-a716-446655440013',
     sync_status: 'SYNCED',
   },
   {
@@ -68,6 +71,7 @@ export const MAP_MOCK_STANDS: Stand[] = [
     map_x: 89.5,
     map_y: 43,
     evento_id: MAP_SEED_EVENT_IDS[1],
+    zone_id: '550e8400-e29b-41d4-a716-446655440011',
     sync_status: 'SYNCED',
   },
 ];

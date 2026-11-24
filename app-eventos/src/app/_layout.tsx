@@ -26,6 +26,11 @@ export default function RootLayout() {
             >
               <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
               <Tabs.Screen name="mapa" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
+              {/* Prueba de concepto NFC (Spec 02): solo visible en desarrollo. */}
+              <Tabs.Screen
+                name="nfc"
+                options={{ title: 'NFC', tabBarLabel: 'NFC', href: __DEV__ ? undefined : null }}
+              />
             </Tabs>
           </NotificationProvider>
         </GamificationProvider>

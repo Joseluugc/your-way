@@ -8,9 +8,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourway.appeventos"
     },
     "android": {
+      "package": "com.yourway.appeventos",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,7 +29,14 @@
       "@react-native-community/datetimepicker",
       "expo-status-bar",
       "expo-router",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-dev-client",
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Your Way usa el NFC para leer las pulseras y los puntos NFC del evento."
+        }
+      ]
     ]
   }
 }

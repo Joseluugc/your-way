@@ -1,7 +1,7 @@
 -- Spec 06 (US-06.1): datos semilla de la demo en vivo.
 --
 -- Idempotente: UUID v4 fijos e INSERT ... ON CONFLICT (id) DO NOTHING, así que ejecutarlo
--- dos veces seguidas no duplica filas. Requiere las migraciones 0001, 0002 y 0003.
+-- dos veces seguidas no duplica filas. Requiere las migraciones 0001 a 0004.
 -- Ejecutar en el SQL Editor de Supabase (como postgres, que no está sujeto a RLS).
 --
 -- Fuente de los datos: app-eventos/src/database/demoSeedData.ts. La base local carga los
@@ -64,5 +64,14 @@ INSERT INTO nfc_tags (id, uid, type, user_id, stand_id, zone_id) VALUES
     ('d4000000-0000-4000-8000-000000000202', '04:C1:00:00:00:02', 'ZONE_CHECKPOINT', NULL, NULL, 'd2000000-0000-4000-8000-000000000002'),
     ('d4000000-0000-4000-8000-000000000203', '04:C1:00:00:00:03', 'ZONE_CHECKPOINT', NULL, NULL, 'd2000000-0000-4000-8000-000000000003')
 ON CONFLICT (id) DO NOTHING;
+
+-- Spec 08: código del evento demo y sus miembros (Elena, STAFF, y Ana, ATTENDEE).
+-- UPDATE y no INSERT: el evento puede existir ya de una ejecución anterior.
+UPDATE eventos SET codigo = 'YWDEMO' WHERE id = '00000000-0000-4000-8000-000000000001';
+
+INSERT INTO evento_miembros (evento_id, user_id) VALUES
+    ('00000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000008'),
+    ('00000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000001')
+ON CONFLICT (evento_id, user_id) DO NOTHING;
 
 COMMIT;

@@ -5,12 +5,14 @@ import { SyncProvider, useSync } from '../../src/providers/SyncProvider';
 import { syncEventos } from '../../src/sync/eventosSync';
 
 let mockNetwork = { isConnected: true, isInternetReachable: true };
+let mockEstado: 'con-sesion' | 'sin-sesion' = 'con-sesion';
 
 // Como el contexto real, devuelve siempre la misma base (si cambiara, re-sincronizaría en bucle).
 const mockDb = { name: 'db-de-prueba' };
 jest.mock('expo-sqlite', () => ({ useSQLiteContext: () => mockDb }));
 jest.mock('expo-network', () => ({ useNetworkState: () => mockNetwork }));
 jest.mock('../../src/sync/eventosSync', () => ({ syncEventos: jest.fn() }));
+jest.mock('../../src/providers/AuthProvider', () => ({ useAuth: () => ({ estado: mockEstado }) }));
 
 const mockedSync = jest.mocked(syncEventos);
 
@@ -33,7 +35,19 @@ describe('[US-07.1] [US-07.3] disparadores de la sincronización (SyncProvider)'
   beforeEach(() => {
     jest.clearAllMocks();
     mockNetwork = { isConnected: true, isInternetReachable: true };
+    mockEstado = 'con-sesion';
     mockedSync.mockResolvedValue(undefined);
+  });
+
+  it('[US-08.2] sin sesión no sincroniza; al iniciar sesión sincroniza', async () => {
+    mockEstado = 'sin-sesion';
+    const view = await render(tree());
+    expect(mockedSync).not.toHaveBeenCalled();
+
+    mockEstado = 'con-sesion';
+    await view.rerender(tree());
+
+    await waitFor(() => expect(mockedSync).toHaveBeenCalledTimes(1));
   });
 
   it('[US-07.1] sincroniza al montar y guarda la hora de la última sincronización', async () => {

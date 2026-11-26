@@ -11,7 +11,16 @@ Ejecutar en el **SQL Editor** de Supabase, en este orden:
 | 1 | `migrations/0001_eventos_sync.sql` | Sincronización de `eventos` (Spec 07) |
 | 2 | `migrations/0002_gamification.sql` | Tablas de gamificación (Spec 04) |
 | 3 | `migrations/0003_core_audit.sql` | UUID, auditoría (`created_at`, `updated_at`, `deleted_at`), trigger de `updated_at`, índices y RLS de las 8 tablas principales (Spec 06) |
-| 4 | `seed.sql` | Datos de la demo en vivo (Spec 06) |
+| 4 | `migrations/0004_auth_roles.sql` | Login con email y contraseña: `eventos.codigo`, `evento_miembros`, alta automática en `users` como `ATTENDEE`, protección de `role` y RLS por rol de `users` y `evento_miembros` (Spec 08) |
+| 5 | `seed.sql` | Datos de la demo en vivo (Spec 06) y miembros del evento demo `YWDEMO` (Spec 08) |
+| 6 | `seed_auth.sql` | **Solo en el proyecto de desarrollo.** Cuentas de login de Elena (STAFF) y Ana (ATTENDEE) (Spec 08) |
+
+Tras aplicar `0004`, en el panel (*Authentication → Sign In / Providers*):
+
+- Desactivar **Allow anonymous sign-ins**: la app ya no usa sesiones anónimas.
+- Desactivar **Confirm email**: quien se registra entra directamente, siempre como `ATTENDEE`.
+
+Los roles se cambian de momento desde el panel (*Table Editor → users*). Desde la API solo puede hacerlo un `STAFF`.
 
 - `../schema.sql` es el esquema base completo, equivalente a aplicar las migraciones. Un cambio de esquema nuevo va en un fichero numerado nuevo (`0004_…`); nunca se edita una migración ya aplicada.
 - `seed.sql` es idempotente: usa UUID fijos e `INSERT … ON CONFLICT (id) DO NOTHING`, así que se puede ejecutar varias veces sin duplicar filas.

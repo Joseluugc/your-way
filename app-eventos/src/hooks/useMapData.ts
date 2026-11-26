@@ -6,6 +6,7 @@ import { syncMapAndOccupancy } from '../domain/map/syncMapAndOccupancy';
 import type { MapSnapshot } from '../domain/map/mapTypes';
 import { MapRepository } from '../database/MapRepository';
 import { SupabaseMapDataSource } from '../sync/supabaseMapDataSource';
+import { ensureSession } from '../lib/supabase';
 import { syncEventos } from '../sync/eventosSync';
 import type { Evento } from '../database/eventQueries';
 
@@ -153,15 +154,18 @@ export function useMapData() {
             syncStatus: 'syncing',
           }));
         }
-        return syncEventos(database).then(() =>
-          syncMapAndOccupancy(
-            repository,
-            new SupabaseMapDataSource(),
-            true,
-            undefined,
-            activeEventId,
-          ),
-        );
+        return syncEventos(database)
+          .then(() => ensureSession())
+          .then((conSesion) =>
+            // Sin sesión (Spec 08) se trata como sin red: snapshot local, estands `PENDING`.
+            syncMapAndOccupancy(
+              repository,
+              new SupabaseMapDataSource(),
+              conSesion,
+              undefined,
+              activeEventId,
+            ),
+          );
       })
       .then((result) => {
         if (active) {

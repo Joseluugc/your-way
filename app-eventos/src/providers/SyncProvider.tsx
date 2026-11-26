@@ -11,6 +11,7 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { useNetworkState } from 'expo-network';
 import { syncEventos } from '../sync/eventosSync';
+import { useAuth } from './AuthProvider';
 
 interface SyncContextValue {
   /** Lanza una sincronización. Nunca lanza errores: un fallo deja los eventos `pending`. */
@@ -22,11 +23,12 @@ interface SyncContextValue {
 const SyncContext = createContext<SyncContextValue | null>(null);
 
 /**
- * Dispara la sincronización de `eventos` al montar y al recuperar la conexión.
- * Debe montarse dentro de `SQLiteProvider`.
+ * Dispara la sincronización de `eventos` al tener sesión (al abrir la app o tras el login) y al
+ * recuperar la conexión. Sin sesión, `syncEventos` se omite. Debe montarse dentro de `AuthProvider`.
  */
 export function SyncProvider({ children }: PropsWithChildren) {
   const database = useSQLiteContext();
+  const { estado } = useAuth();
   const networkState = useNetworkState();
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const wasOnline = useRef<boolean | null>(null);
@@ -40,15 +42,15 @@ export function SyncProvider({ children }: PropsWithChildren) {
   }, [database]);
 
   useEffect(() => {
-    requestSync();
-  }, [requestSync]);
+    if (estado === 'con-sesion') requestSync();
+  }, [estado, requestSync]);
 
   const online = networkState.isConnected === true && networkState.isInternetReachable !== false;
 
   useEffect(() => {
     const previous = wasOnline.current;
     wasOnline.current = online;
-    // Solo al pasar de desconectado a conectado; el montaje ya sincroniza arriba.
+    // Solo al pasar de desconectado a conectado; el inicio de sesión ya sincroniza arriba.
     if (online && previous === false) {
       requestSync();
     }

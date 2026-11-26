@@ -44,7 +44,7 @@ jest.mock('../../src/lib/supabase', () => {
     }
   }
   return {
-    ensureSession: async () => undefined,
+    ensureSession: async () => true,
     supabase: { from: (table: string) => new Query(table) },
   };
 });

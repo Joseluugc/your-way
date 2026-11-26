@@ -3,7 +3,7 @@
 **Owner:** @Javi
 **Rama:** `Javi`
 **Issue:** TASK-13 (#13) · Prioridad Alta · 2 puntos
-**Estado:** 🟡 En revisión (pendientes las comprobaciones manuales marcadas abajo)
+**Estado:** ✅ Implementada (pendiente de Pull Request a `main`)
 **Épica en GitHub Projects:** #Epic-06
 **Depende de:** Spec 01 (SQLite local), Spec 03 (mapa y aforo), Spec 07 (patrón de sincronización con Supabase)
 **Desbloquea:** TASK-14 (despliegue de la base central y datos semilla)
@@ -84,7 +84,7 @@ Esta spec fija tres cosas:
 **Criterios de Aceptación (Definition of Done):**
 - [x] **Contraste:** todo texto alcanza una relación de contraste ≥ 4,5:1 con su fondo (WCAG 2.1 AA, criterio 1.4.3); el texto grande (≥ 18 pt, o ≥ 14 pt en negrita) y los iconos y bordes de controles alcanzan ≥ 3:1 (criterio 1.4.11). Se verifica con una función de dominio que calcula la relación de contraste de cada par de colores definidos en los estilos, con su test.
 - [x] **Semáforo de aforo sin depender del color:** cada nivel (`available`, `medium`, `full`, `unavailable`) muestra, además del color, un icono distinto y un texto ("Disponible", "Ocupación media", "Completo", "Sin datos").
-- [ ] **Daltonismo:** con la simulación de protanopía, deuteranopía y tritanopía (herramienta "Emulate vision deficiencies" de Chrome DevTools sobre la versión web), los 4 niveles del semáforo se distinguen entre sí por su icono y su texto. Se adjuntan las capturas a la Pull Request.
+- [x] **Daltonismo:** con la simulación de protanopía, deuteranopía y tritanopía (herramienta "Emulate vision deficiencies" de Chrome DevTools sobre la versión web), los 4 niveles del semáforo se distinguen entre sí por su icono y su texto. Se adjuntan las capturas a la Pull Request. *(Comprobado el 2026-11-26 en la versión web: en protanopía y deuteranopía los colores casi se igualan y los niveles se distinguen por icono y texto; en tritanopía, "Ocupación media" y "Completo" se distinguen por ! y ✕.)*
 - [x] **Vibración diferenciada** con `expo-haptics`, mediante una función de dominio pura que asocia cada resultado a un patrón (verificando la API contra la documentación de Expo SDK 58):
     - lectura NFC correcta → notificación de éxito;
     - acceso denegado → notificación de error;
@@ -92,7 +92,7 @@ Esta spec fija tres cosas:
 - [x] La función de patrones está probada para los 3 resultados, y la vibración nunca es el único aviso: cada resultado también se muestra en pantalla y se anuncia al lector de pantalla.
 - [x] **Lector de pantalla:** todo componente interactivo (botones, campos de fecha, estands y zonas del mapa, filas de eventos) tiene `accessibilityRole` y `accessibilityLabel` en español; las acciones no evidentes tienen `accessibilityHint` (por ejemplo, "mantén pulsado para eliminar").
 - [x] Un test de React Native Testing Library recorre las pantallas `index`, `mapa` y el formulario de evento y falla si algún elemento pulsable carece de `accessibilityLabel`.
-- [ ] Prueba manual con TalkBack (Android) o VoiceOver (iOS): crear un evento y consultar el aforo de una zona sin mirar la pantalla. El resultado se anota en la Pull Request.
+- [x] Prueba manual con TalkBack (Android) o VoiceOver (iOS): crear un evento y consultar el aforo de una zona sin mirar la pantalla. El resultado se anota en la Pull Request. *(Comprobado el 2026-11-26 con VoiceOver en iPhone: se crea un evento y se consulta el aforo de una sala sin mirar la pantalla.)*
 
 ## 3. Consideraciones Técnicas
 

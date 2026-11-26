@@ -71,6 +71,15 @@ export const DEMO_USERS: DemoUser[] = [
 
 const EXHIBITOR_ID = uuid('d1', 10);
 
+/**
+ * Usuario solo de desarrollo, sin pulsera: permite probar la vinculación de una pulsera nueva
+ * (prueba de concepto NFC de la Spec 02). No está en `supabase/seed.sql`, donde cada usuario
+ * de la demo tiene su pulsera.
+ */
+export const DEV_USERS_WITHOUT_WRISTBAND: DemoUser[] = [
+  { id: uuid('d5', 1), name: 'Marta Sánchez', email: 'marta.sanchez@yourway.demo', role: 'ATTENDEE', company: null },
+];
+
 export const DEMO_ZONES: DemoZone[] = [
   { id: uuid('d2', 1), name: 'Pabellón General', max_capacity: 300, required_role: 'ATTENDEE' },
   { id: uuid('d2', 2), name: 'Zona VIP & Lounge', max_capacity: 50, required_role: 'VIP' },

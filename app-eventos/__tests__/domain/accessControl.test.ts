@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { validateZoneAccess, type UserRole } from '../../src/domain/b2b/accessValidator';
+import { validateZoneAccess } from '../../src/domain/b2b/accessValidator';
+import type { UserRole } from '../../src/domain/map/mapTypes';
 
 const ROLES: UserRole[] = ['ATTENDEE', 'EXHIBITOR', 'VIP', 'STAFF'];
 

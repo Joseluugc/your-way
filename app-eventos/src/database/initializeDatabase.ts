@@ -8,6 +8,7 @@ import {
 import {
   DEMO_EVENTO,
   DEMO_NFC_TAGS,
+  DEV_USERS_WITHOUT_WRISTBAND,
   DEMO_STANDS,
   DEMO_USERS,
   DEMO_ZONES,
@@ -125,6 +126,12 @@ export async function initializeDatabase(database: SQLiteDatabase): Promise<void
     CREATE INDEX IF NOT EXISTS idx_eventos_fecha_inicio ON eventos(fecha_inicio);
   `);
 }
+
+/** Expresión SQLite que genera un UUID v4 (versión 4 y variante 8, 9, a o b). */
+const SQLITE_UUID_V4 = `lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
+  || substr(lower(hex(randomblob(2))), 2) || '-'
+  || substr('89ab', 1 + (abs(random()) % 4), 1)
+  || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))`;
 
 const SEED_EVENTO_1_ID = '00000000-0000-4000-8000-000000000001';
 const SEED_EVENTO_2_ID = '00000000-0000-4000-8000-000000000002';
@@ -438,6 +445,25 @@ const MIGRATIONS: string[] = [
     ALTER TABLE nfc_tags_v5 RENAME TO nfc_tags;
     CREATE INDEX idx_nfc_tags_user_id ON nfc_tags(user_id);
   `,
+  // 6: `nfc_tags.id` genera un UUID v4 por defecto, como `gen_random_uuid()` en Supabase, para que
+  // las altas que solo indican `uid` (p. ej. la vinculación de pulseras de la Spec 02) funcionen.
+  `
+    CREATE TABLE nfc_tags_v6 (
+      id TEXT PRIMARY KEY NOT NULL DEFAULT (${SQLITE_UUID_V4}),
+      uid TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL CHECK (type IN ('USER_WRISTBAND', 'STAND_POINT', 'ZONE_CHECKPOINT')),
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      stand_id TEXT REFERENCES stands(id) ON DELETE CASCADE,
+      zone_id TEXT REFERENCES zones(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO nfc_tags_v6 (id, uid, type, user_id, stand_id, zone_id)
+    SELECT id, uid, type, user_id, stand_id, zone_id FROM nfc_tags;
+
+    DROP TABLE nfc_tags;
+    ALTER TABLE nfc_tags_v6 RENAME TO nfc_tags;
+    CREATE INDEX idx_nfc_tags_user_id ON nfc_tags(user_id);
+  `,
 ];
 
 /**
@@ -548,7 +574,7 @@ export async function seedDevData(database: SQLiteDatabase): Promise<void> {
       new Date().toISOString(),
     );
 
-    for (const user of DEMO_USERS) {
+    for (const user of [...DEMO_USERS, ...DEV_USERS_WITHOUT_WRISTBAND]) {
       await database.runAsync(
         'INSERT OR IGNORE INTO users (id, name, email, role, company) VALUES (?, ?, ?, ?, ?)',
         user.id,

@@ -109,7 +109,7 @@ async function createVersion4Database() {
   return temp;
 }
 
-test('[US-06.1] una base en versión 4 migra a la 5 sin perder filas', async () => {
+test('[US-06.1] una base en versión 4 migra a la versión actual sin perder filas', async () => {
   const temp = await createVersion4Database();
   try {
     const before = tableCounts(temp.sqlite);
@@ -119,7 +119,7 @@ test('[US-06.1] una base en versión 4 migra a la 5 sin perder filas', async () 
 
     await runInitialize(temp.database, false);
 
-    assert.equal(userVersion(temp.sqlite), 5);
+    assert.ok(userVersion(temp.sqlite) >= 6);
     assert.deepEqual(tableCounts(temp.sqlite), before);
 
     const tagsAfter = temp.sqlite
@@ -154,6 +154,21 @@ test('[US-06.1] nfc_tags usa id como clave primaria y uid como clave única', as
         VALUES ('d4000000-0000-4000-8000-00000000ffff', 'tag-ana', 'USER_WRISTBAND', '${USER_2}');
       `),
     );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test('[US-06.1] nfc_tags genera un UUID v4 si el alta solo indica el uid (migración 6)', async () => {
+  const temp = await createVersion4Database();
+  try {
+    await runInitialize(temp.database, false);
+
+    temp.sqlite.exec(`
+      INSERT INTO nfc_tags (uid, type, user_id) VALUES ('04A1B2C3D4E580', 'USER_WRISTBAND', '${USER_2}');
+    `);
+    const { id } = temp.sqlite.prepare("SELECT id FROM nfc_tags WHERE uid = '04A1B2C3D4E580'").get();
+    assert.match(id, UUID_V4);
   } finally {
     temp.cleanup();
   }

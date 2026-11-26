@@ -44,7 +44,7 @@ Esta spec fija tres cosas:
 - **Para** que cualquier miembro pueda recrear la base de la demo y que los datos creados offline se sincronicen sin colisiones ni conflictos sin resolver
 
 **Criterios de Aceptación (Definition of Done):**
-- [ ] Existe `supabase/migrations/0003_core_audit.sql` y se ejecuta sin errores en el SQL Editor de Supabase sobre una base con `0001` y `0002` aplicadas. *(Verificado sobre PostgreSQL 17 con PGlite; falta ejecutarlo en el Supabase del equipo.)*
+- [x] Existe `supabase/migrations/0003_core_audit.sql` y se ejecuta sin errores en el SQL Editor de Supabase sobre una base con `0001` y `0002` aplicadas. *(Ejecutado en el Supabase del equipo el 2026-11-26; comprobación en `supabase/verificacion/`.)*
 - [x] Las 8 tablas principales (`users`, `nfc_tags`, `stands`, `zones`, `stamps`, `ratings`, `leads`, `access_logs`) tienen clave primaria UUID con valor por defecto `gen_random_uuid()` (v4). `nfc_tags` conserva `uid` (UID físico de la etiqueta) como clave natural `UNIQUE` y añade `id UUID` como clave primaria.
 - [x] Las 8 tablas tienen `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` y `deleted_at TIMESTAMPTZ` (NULL = activo).
 - [x] Un trigger `BEFORE INSERT OR UPDATE` asigna `updated_at = now()` en las 8 tablas; un `updated_at` enviado por el cliente se ignora.

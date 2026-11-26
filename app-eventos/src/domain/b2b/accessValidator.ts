@@ -1,31 +1,27 @@
 // app-eventos/src/domain/b2b/accessValidator.ts
+import type { UserRole } from '../map/mapTypes';
 
-export type UserRole = 'ATTENDEE' | 'EXHIBITOR' | 'VIP' | 'STAFF';
-export type ZoneRole = 'ATTENDEE' | 'EXHIBITOR' | 'VIP' | 'STAFF';
+const ROLE_LEVEL: Record<UserRole, number> = {
+  ATTENDEE: 1,  // Asistente normal (solo zonas públicas)
+  EXHIBITOR: 2, // Expositor (zonas públicas + zona de estands)
+  VIP: 3,       // Invitado VIP
+  STAFF: 4,     // Organización (acceso total)
+};
 
 /**
- * Valida si el rol de un usuario tiene permiso para entrar a una zona específica.
- * @param userRole El rol del asistente escaneado.
- * @param requiredZoneRole El rol mínimo exigido por la zona/puerta. `null` = zona abierta a todos
- *   (`zones.required_role` admite NULL).
- * @returns boolean - true (Acceso Permitido) o false (Acceso Denegado)
+ * Valida si un usuario puede entrar en una zona.
+ * Una zona sin rol requerido (null) se considera pública.
+ * Un rol desconocido se deniega siempre.
  */
-export function validateZoneAccess(userRole: UserRole, requiredZoneRole: ZoneRole | null): boolean {
-  if (requiredZoneRole === null) {
-    return true;
+export function validateZoneAccess(
+  userRole: UserRole,
+  requiredZoneRole: UserRole | null,
+): boolean {
+  const userLevel = ROLE_LEVEL[userRole];
+  const requiredLevel = requiredZoneRole === null ? ROLE_LEVEL.ATTENDEE : ROLE_LEVEL[requiredZoneRole];
+
+  if (userLevel === undefined || requiredLevel === undefined) {
+    return false;
   }
-
-  // Definimos la jerarquía de roles (mayor número = más permisos)
-  const roleHierarchy: Record<UserRole, number> = {
-    'ATTENDEE': 1,   // Asistente normal (solo zonas públicas)
-    'EXHIBITOR': 2,  // Expositor (zonas públicas + zona de estands privada)
-    'VIP': 3,        // Invitado VIP (casi todo)
-    'STAFF': 4       // Organización (acceso total)
-  };
-
-  const userLevel = roleHierarchy[userRole] || 0;
-  const requiredLevel = roleHierarchy[requiredZoneRole] || 0;
-
-  // Si tu nivel es igual o superior al requerido, la puerta se abre (Verde)
   return userLevel >= requiredLevel;
 }

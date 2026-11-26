@@ -1,0 +1,68 @@
+-- Spec 06 (US-06.1): datos semilla de la demo en vivo.
+--
+-- Idempotente: UUID v4 fijos e INSERT ... ON CONFLICT (id) DO NOTHING, así que ejecutarlo
+-- dos veces seguidas no duplica filas. Requiere las migraciones 0001, 0002 y 0003.
+-- Ejecutar en el SQL Editor de Supabase (como postgres, que no está sujeto a RLS).
+--
+-- Fuente de los datos: app-eventos/src/database/demoSeedData.ts. La base local carga los
+-- mismos UUID en modo desarrollo y tests/demoSeed.test.mjs comprueba que coinciden.
+-- UIDs NFC documentados en supabase/README.md.
+
+BEGIN;
+
+-- Evento al que pertenecen los estands
+INSERT INTO eventos (id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion) VALUES
+    ('00000000-0000-4000-8000-000000000001', 'Presentación Your Way', '2026-11-15T10:00:00.000Z', '2026-11-15T11:30:00.000Z', 'Auditorio Principal', 'Evento de ejemplo para validar el mapa y la gestión de estands.')
+ON CONFLICT (id) DO NOTHING;
+
+-- 10 usuarios: 5 ATTENDEE, 2 VIP, 2 STAFF, 1 EXHIBITOR
+INSERT INTO users (id, name, email, role, company) VALUES
+    ('d1000000-0000-4000-8000-000000000001', 'Ana Gómez', 'ana.gomez@yourway.demo', 'ATTENDEE', NULL),
+    ('d1000000-0000-4000-8000-000000000002', 'Luis Martín', 'luis.martin@yourway.demo', 'ATTENDEE', NULL),
+    ('d1000000-0000-4000-8000-000000000003', 'Lucía Fernández', 'lucia.fernandez@yourway.demo', 'ATTENDEE', 'Universidad de Córdoba'),
+    ('d1000000-0000-4000-8000-000000000004', 'Pablo Ruiz', 'pablo.ruiz@yourway.demo', 'ATTENDEE', NULL),
+    ('d1000000-0000-4000-8000-000000000005', 'Sara Molina', 'sara.molina@yourway.demo', 'ATTENDEE', 'StartUp Lab'),
+    ('d1000000-0000-4000-8000-000000000006', 'María López', 'maria.lopez@yourway.demo', 'VIP', 'Inversores Sur'),
+    ('d1000000-0000-4000-8000-000000000007', 'Javier Torres', 'javier.torres@yourway.demo', 'VIP', 'Ayuntamiento'),
+    ('d1000000-0000-4000-8000-000000000008', 'Elena Navarro', 'elena.navarro@yourway.demo', 'STAFF', 'Your Way'),
+    ('d1000000-0000-4000-8000-000000000009', 'Diego Castro', 'diego.castro@yourway.demo', 'STAFF', 'Your Way'),
+    ('d1000000-0000-4000-8000-000000000010', 'Carlos Ruiz', 'carlos.ruiz@yourway.demo', 'EXHIBITOR', 'Tech Solutions')
+ON CONFLICT (id) DO NOTHING;
+
+-- 3 zonas: general, VIP y STAFF
+INSERT INTO zones (id, name, max_capacity, current_capacity, required_role) VALUES
+    ('d2000000-0000-4000-8000-000000000001', 'Pabellón General', 300, 0, 'ATTENDEE'),
+    ('d2000000-0000-4000-8000-000000000002', 'Zona VIP & Lounge', 50, 0, 'VIP'),
+    ('d2000000-0000-4000-8000-000000000003', 'Backstage Staff', 20, 0, 'STAFF')
+ON CONFLICT (id) DO NOTHING;
+
+-- 4 estands (coordenadas en el plano, sistema map-units-0-100)
+INSERT INTO stands (id, name, owner_id, map_x, map_y, evento_id, zone_id) VALUES
+    ('d3000000-0000-4000-8000-000000000001', 'Tech Solutions', 'd1000000-0000-4000-8000-000000000010', 20, 62, '00000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001'),
+    ('d3000000-0000-4000-8000-000000000002', 'AI & Data Lab', 'd1000000-0000-4000-8000-000000000010', 42, 74, '00000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001'),
+    ('d3000000-0000-4000-8000-000000000003', 'Rincón Sostenible', NULL, 66, 60, '00000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001'),
+    ('d3000000-0000-4000-8000-000000000004', 'Lounge Partners', NULL, 84, 78, '00000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000002')
+ON CONFLICT (id) DO NOTHING;
+
+-- 17 etiquetas NFC: 10 pulseras, 4 puntos de estand y 3 controles de zona
+INSERT INTO nfc_tags (id, uid, type, user_id, stand_id, zone_id) VALUES
+    ('d4000000-0000-4000-8000-000000000001', '04:A1:00:00:00:01', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000001', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000002', '04:A1:00:00:00:02', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000002', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000003', '04:A1:00:00:00:03', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000003', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000004', '04:A1:00:00:00:04', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000004', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000005', '04:A1:00:00:00:05', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000005', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000006', '04:A1:00:00:00:06', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000006', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000007', '04:A1:00:00:00:07', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000007', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000008', '04:A1:00:00:00:08', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000008', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000009', '04:A1:00:00:00:09', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000009', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000010', '04:A1:00:00:00:0A', 'USER_WRISTBAND', 'd1000000-0000-4000-8000-000000000010', NULL, NULL),
+    ('d4000000-0000-4000-8000-000000000101', '04:B1:00:00:00:01', 'STAND_POINT', NULL, 'd3000000-0000-4000-8000-000000000001', NULL),
+    ('d4000000-0000-4000-8000-000000000102', '04:B1:00:00:00:02', 'STAND_POINT', NULL, 'd3000000-0000-4000-8000-000000000002', NULL),
+    ('d4000000-0000-4000-8000-000000000103', '04:B1:00:00:00:03', 'STAND_POINT', NULL, 'd3000000-0000-4000-8000-000000000003', NULL),
+    ('d4000000-0000-4000-8000-000000000104', '04:B1:00:00:00:04', 'STAND_POINT', NULL, 'd3000000-0000-4000-8000-000000000004', NULL),
+    ('d4000000-0000-4000-8000-000000000201', '04:C1:00:00:00:01', 'ZONE_CHECKPOINT', NULL, NULL, 'd2000000-0000-4000-8000-000000000001'),
+    ('d4000000-0000-4000-8000-000000000202', '04:C1:00:00:00:02', 'ZONE_CHECKPOINT', NULL, NULL, 'd2000000-0000-4000-8000-000000000002'),
+    ('d4000000-0000-4000-8000-000000000203', '04:C1:00:00:00:03', 'ZONE_CHECKPOINT', NULL, NULL, 'd2000000-0000-4000-8000-000000000003')
+ON CONFLICT (id) DO NOTHING;
+
+COMMIT;

@@ -20,8 +20,8 @@ export default function RootLayout() {
             <Tabs
               screenOptions={{
                 headerShown: false,
-                tabBarActiveTintColor: '#167B71',
-                tabBarInactiveTintColor: '#71827D',
+                tabBarActiveTintColor: '#13695F',
+                tabBarInactiveTintColor: '#5A6A64',
               }}
             >
               <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />

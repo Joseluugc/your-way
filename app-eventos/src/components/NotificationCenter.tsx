@@ -110,6 +110,7 @@ export default function NotificationCenter({
           {unreadCount > 0 ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Marcar todos los avisos como leídos"
               onPress={() => void onMarkAllRead()}
               style={styles.markAllButton}
             >
@@ -127,6 +128,7 @@ export default function NotificationCenter({
               return (
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel={`Filtrar avisos: ${item.label}`}
                   accessibilityState={{ selected }}
                   key={item.value}
                   onPress={() => setFilter(item.value)}
@@ -174,6 +176,7 @@ export default function NotificationCenter({
                     {!notification.is_read ? (
                       <Pressable
                         accessibilityRole="button"
+                        accessibilityLabel={`Marcar como leído: ${notification.title}`}
                         onPress={() => void onMarkRead(notification.id)}
                         style={styles.markReadButton}
                       >
@@ -198,6 +201,7 @@ export default function NotificationCenter({
                 {DEMO_TYPES.map((item) => (
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel={`Simular aviso: ${item.label}`}
                     accessibilityState={{ disabled: !canSimulate }}
                     disabled={!canSimulate}
                     key={item.value}
@@ -266,42 +270,42 @@ const styles = StyleSheet.create({
   },
   eyebrow: { color: '#56736D', fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
   title: { color: '#173A35', fontSize: 22, fontWeight: '700', marginTop: 3 },
-  subtitle: { color: '#71827D', fontSize: 12, marginTop: 3 },
+  subtitle: { color: '#5A6A64', fontSize: 12, marginTop: 3 },
   closeButton: { paddingHorizontal: 10, paddingVertical: 5 },
   closeText: { color: '#173A35', fontSize: 28, lineHeight: 30 },
   markAllButton: { alignSelf: 'flex-end', paddingVertical: 6 },
-  markAllText: { color: '#167B71', fontSize: 12, fontWeight: '700' },
+  markAllText: { color: '#13695F', fontSize: 12, fontWeight: '700' },
   filters: { gap: 7, paddingVertical: 9 },
   filterButton: {
     borderWidth: 1,
-    borderColor: '#CBD8D2',
+    borderColor: '#7E8E88',
     borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  selectedFilter: { backgroundColor: '#167B71', borderColor: '#167B71' },
+  selectedFilter: { backgroundColor: '#13695F', borderColor: '#13695F' },
   filterText: { color: '#526B63', fontSize: 11, fontWeight: '600' },
   selectedFilterText: { color: '#FFFFFF' },
   notificationList: { flex: 1, marginTop: 4 },
-  emptyText: { color: '#71827D', fontSize: 13, paddingVertical: 24, textAlign: 'center' },
+  emptyText: { color: '#5A6A64', fontSize: 13, paddingVertical: 24, textAlign: 'center' },
   notificationCard: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E3EBE7',
+    borderColor: '#7E8E88',
     borderRadius: 13,
     borderWidth: 1,
     marginBottom: 9,
     padding: 13,
   },
-  unreadCard: { borderLeftColor: '#167B71', borderLeftWidth: 4 },
+  unreadCard: { borderLeftColor: '#13695F', borderLeftWidth: 4 },
   cardHeading: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  typeLabel: { color: '#167B71', fontSize: 10, fontWeight: '700', flex: 1 },
-  readLabel: { color: '#71827D', fontSize: 10 },
+  typeLabel: { color: '#13695F', fontSize: 10, fontWeight: '700', flex: 1 },
+  readLabel: { color: '#5A6A64', fontSize: 10 },
   notificationTitle: { color: '#243E39', fontSize: 14, fontWeight: '700', marginTop: 7 },
   notificationContent: { color: '#526B63', fontSize: 12, lineHeight: 18, marginTop: 4 },
   zoneName: { color: '#425B54', fontSize: 11, fontWeight: '600', marginTop: 7 },
-  dateLabel: { color: '#87958F', fontSize: 10, marginTop: 7 },
+  dateLabel: { color: '#5A6A64', fontSize: 10, marginTop: 7 },
   markReadButton: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 4 },
-  markReadText: { color: '#167B71', fontSize: 11, fontWeight: '700' },
+  markReadText: { color: '#13695F', fontSize: 11, fontWeight: '700' },
   demoSection: {
     backgroundColor: '#E7F0EC',
     borderRadius: 12,
@@ -311,7 +315,7 @@ const styles = StyleSheet.create({
   demoTitle: { color: '#173A35', fontSize: 12, fontWeight: '700' },
   demoHint: { color: '#526B63', fontSize: 10, lineHeight: 15, marginTop: 4 },
   demoButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
-  demoButton: { backgroundColor: '#167B71', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  demoButton: { backgroundColor: '#13695F', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
   disabledButton: { backgroundColor: '#91A7A0' },
   demoButtonText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
   offlineLabel: { color: '#825510', fontSize: 10, fontWeight: '600', marginTop: 7 },

@@ -57,7 +57,7 @@ export default function OrganizerDashboardScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={loading && stats !== null} onRefresh={refrescarTodo} tintColor="#167B71" />
+          <RefreshControl refreshing={loading && stats !== null} onRefresh={refrescarTodo} tintColor="#13695F" />
         }
       >
         <View style={styles.header}>
@@ -77,8 +77,11 @@ export default function OrganizerDashboardScreen() {
         </View>
 
         {/* BOTÓN PARA ABRIR EL FORMULARIO DE EVENTOS */}
-        <TouchableOpacity 
-          style={styles.createButton} 
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Crear nuevo evento"
+          accessibilityHint="Abre el formulario para añadir un evento a la agenda"
+          style={styles.createButton}
           onPress={() => setModalVisible(true)}
           activeOpacity={0.8}
         >
@@ -89,13 +92,16 @@ export default function OrganizerDashboardScreen() {
         {eventosState.error ? (
           <EmptyPanel text={eventosState.error} />
         ) : eventosState.loading && eventosState.eventos.length === 0 ? (
-          <ActivityIndicator color="#167B71" />
+          <ActivityIndicator color="#13695F" />
         ) : eventosState.eventos.length > 0 ? (
           <View style={styles.listSurface}>
             {eventosState.eventos.map((evento, index) => (
               <Pressable
                 key={evento.id}
                 accessibilityRole="button"
+                accessibilityLabel={`${evento.titulo}. ${formatearRango(evento)}. ${evento.ubicacion}${
+                  evento.sync_status === 'pending' ? '. Pendiente de sincronizar' : ''
+                }`}
                 accessibilityHint="Mantén pulsado para eliminar el evento"
                 onLongPress={() => confirmarBorrado(evento)}
                 style={[styles.eventRow, index === eventosState.eventos.length - 1 && styles.lastRow]}
@@ -116,7 +122,12 @@ export default function OrganizerDashboardScreen() {
         {error ? (
           <View style={styles.errorBanner}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable accessibilityRole="button" onPress={refresh} style={styles.retryButton}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Reintentar la carga de estadísticas"
+              onPress={refresh}
+              style={styles.retryButton}
+            >
               <Text style={styles.retryText}>Reintentar</Text>
             </Pressable>
           </View>
@@ -124,7 +135,7 @@ export default function OrganizerDashboardScreen() {
 
         {loading && stats === null ? (
           <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color="#167B71" />
+            <ActivityIndicator size="large" color="#13695F" />
             <Text style={styles.mutedText}>Cargando estadísticas…</Text>
           </View>
         ) : stats ? (
@@ -233,7 +244,11 @@ export default function OrganizerDashboardScreen() {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => setModalVisible(false)}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar y cerrar el formulario"
+            onPress={() => setModalVisible(false)}
+          >
             <Text style={styles.closeText}>Cancelar</Text>
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Nuevo Evento</Text>
@@ -295,13 +310,13 @@ function EmptyPanel({ text }: { text: string }) {
 type MetricTone = 'teal' | 'coral' | 'gold' | 'blue';
 
 const TONE_COLORS: Record<MetricTone, string> = {
-  teal: '#167B71',
+  teal: '#13695F',
   coral: '#D26D56',
   gold: '#C58D2A',
   blue: '#4C79A7',
 };
 
-const ROLE_COLORS = ['#167B71', '#C58D2A', '#4C79A7', '#D26D56'];
+const ROLE_COLORS = ['#13695F', '#C58D2A', '#4C79A7', '#D26D56'];
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F3F6F4' },
@@ -323,16 +338,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#E2EFEB',
   },
-  localDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#167B71', marginRight: 6 },
+  localDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#13695F', marginRight: 6 },
   localLabel: { color: '#25635A', fontSize: 11, fontWeight: '600' },
-  syncLabel: { color: '#7A8A85', fontSize: 11, marginTop: 4 },
-  pendingLabel: { color: '#B77B1F', fontSize: 11, fontWeight: '600', marginTop: 4 },
+  syncLabel: { color: '#5A6A64', fontSize: 11, marginTop: 4 },
+  pendingLabel: { color: '#875710', fontSize: 11, fontWeight: '600', marginTop: 4 },
   
   // ESTILOS NUEVOS PARA EL BOTÓN Y EL MODAL
-  createButton: { backgroundColor: '#167B71', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  createButton: { backgroundColor: '#13695F', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5EBE8' },
-  closeText: { color: '#167B71', fontSize: 16, fontWeight: '600' },
+  closeText: { color: '#13695F', fontSize: 16, fontWeight: '600' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#173A35' },
   
   errorBanner: {
@@ -346,7 +361,7 @@ const styles = StyleSheet.create({
   retryButton: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 3 },
   retryText: { color: '#913C32', fontSize: 13, fontWeight: '700' },
   loadingState: { minHeight: 240, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  mutedText: { color: '#6E817C', fontSize: 14 },
+  mutedText: { color: '#5A6A64', fontSize: 14 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5, marginBottom: 8 },
   metricCell: {
     position: 'relative',
@@ -361,11 +376,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   metricAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 3 },
-  metricLabel: { color: '#6B7F79', fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
+  metricLabel: { color: '#5A6A64', fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
   metricValue: { color: '#173A35', fontSize: 27, fontWeight: '700', marginTop: 9 },
   sectionHeading: { marginTop: 20, marginBottom: 12 },
   sectionTitle: { color: '#173A35', fontSize: 18, fontWeight: '700' },
-  sectionDetail: { color: '#71827D', fontSize: 12, marginTop: 3 },
+  sectionDetail: { color: '#5A6A64', fontSize: 12, marginTop: 3 },
   roleList: { paddingHorizontal: 2 },
   roleRow: { marginBottom: 12 },
   roleCopy: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
@@ -390,18 +405,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5EBE8',
   },
   standIdentity: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
-  rank: { width: 29, color: '#91A19B', fontSize: 12, fontWeight: '700' },
+  rank: { width: 29, color: '#5A6A64', fontSize: 12, fontWeight: '700' },
   standCopy: { flex: 1 },
-  rowDetail: { color: '#7A8A85', fontSize: 11, marginTop: 3 },
+  rowDetail: { color: '#5A6A64', fontSize: 11, marginTop: 3 },
   ratingBlock: { minWidth: 66, alignItems: 'flex-end' },
-  ratingValue: { color: '#B77B1F', fontSize: 17, fontWeight: '700' },
-  ratingCaption: { color: '#87938F', fontSize: 10, marginTop: 2 },
+  ratingValue: { color: '#875710', fontSize: 17, fontWeight: '700' },
+  ratingCaption: { color: '#5A6A64', fontSize: 10, marginTop: 2 },
   zoneList: { gap: 15 },
   zoneItem: { paddingHorizontal: 2 },
   zoneTopline: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 7, gap: 12 },
   zoneCount: { color: '#304A44', fontSize: 13, fontWeight: '700' },
   zoneBar: { backgroundColor: '#D26D56' },
   emptyPanel: { padding: 15, backgroundColor: '#FFFFFF', borderRadius: 7 },
-  emptyLine: { color: '#7A8A85', fontSize: 13, paddingVertical: 4 },
-  footerNote: { color: '#8B9994', fontSize: 11, textAlign: 'center', marginTop: 28 },
+  emptyLine: { color: '#5A6A64', fontSize: 13, paddingVertical: 4 },
+  footerNote: { color: '#5A6A64', fontSize: 11, textAlign: 'center', marginTop: 28 },
 });

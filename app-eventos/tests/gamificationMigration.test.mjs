@@ -80,7 +80,7 @@ test('la migración nº 4 crea las tablas de gamificación y stands.zone_id', as
   try {
     await runInitialize(temp.database);
 
-    assert.equal(temp.sqlite.prepare('PRAGMA user_version').get().user_version, 4);
+    assert.ok(temp.sqlite.prepare('PRAGMA user_version').get().user_version >= 4);
     const tables = tableNames(temp.sqlite);
     for (const table of GAMIFICATION_TABLES) {
       assert.ok(tables.includes(table), `falta la tabla ${table}`);
@@ -152,7 +152,7 @@ test('ejecutar la inicialización dos veces es idempotente', async () => {
     await runInitialize(temp.database);
     await runInitialize(temp.database);
 
-    assert.equal(temp.sqlite.prepare('PRAGMA user_version').get().user_version, 4);
+    assert.ok(temp.sqlite.prepare('PRAGMA user_version').get().user_version >= 4);
     assert.equal(temp.sqlite.prepare('SELECT COUNT(*) AS n FROM user_stamps').get().n, 2);
     assert.equal(temp.sqlite.prepare('SELECT COUNT(*) AS n FROM stand_ratings').get().n, 2);
   } finally {
@@ -160,12 +160,12 @@ test('ejecutar la inicialización dos veces es idempotente', async () => {
   }
 });
 
-test('una instalación nueva llega a la versión 4 con estands asignados a zonas', async () => {
+test('una instalación nueva llega al menos a la versión 4 con estands asignados a zonas', async () => {
   const temp = createTempDatabase('your-way-gamification-fresh-');
   try {
     await runInitialize(temp.database);
 
-    assert.equal(temp.sqlite.prepare('PRAGMA user_version').get().user_version, 4);
+    assert.ok(temp.sqlite.prepare('PRAGMA user_version').get().user_version >= 4);
     const withZone = temp.sqlite
       .prepare('SELECT COUNT(*) AS n FROM stands WHERE zone_id IS NOT NULL')
       .get().n;

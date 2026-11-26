@@ -133,6 +133,28 @@ const SQLITE_UUID_V4 = `lower(hex(randomblob(4))) || '-' || lower(hex(randomblob
   || substr('89ab', 1 + (abs(random()) % 4), 1)
   || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))`;
 
+/** Condición SQLite: `column` tiene forma de UUID (8-4-4-4-12 dígitos hexadecimales). */
+function isSqliteUuid(column: string): string {
+  return `length(${column}) = 36
+    AND substr(${column}, 9, 1) = '-' AND substr(${column}, 14, 1) = '-'
+    AND substr(${column}, 19, 1) = '-' AND substr(${column}, 24, 1) = '-'
+    AND lower(replace(${column}, '-', '')) NOT GLOB '*[^0-9a-f]*'`;
+}
+
+/** Columnas locales que guardan el id de un evento (salvo `xp_transactions`, append-only). */
+const EVENT_ID_REFERENCES: readonly (readonly [table: string, column: string])[] = [
+  ['stands', 'evento_id'],
+  ['local_map_metadata', 'event_id'],
+  ['factions', 'evento_id'],
+  ['attendee_factions', 'evento_id'],
+  ['user_stamps', 'evento_id'],
+  ['user_achievements', 'evento_id'],
+  ['roulette_spins', 'evento_id'],
+  ['gamification_config', 'evento_id'],
+  ['ranking_cache', 'evento_id'],
+  ['faction_score_cache', 'evento_id'],
+];
+
 const SEED_EVENTO_1_ID = '00000000-0000-4000-8000-000000000001';
 const SEED_EVENTO_2_ID = '00000000-0000-4000-8000-000000000002';
 
@@ -463,6 +485,33 @@ const MIGRATIONS: string[] = [
     DROP TABLE nfc_tags;
     ALTER TABLE nfc_tags_v6 RENAME TO nfc_tags;
     CREATE INDEX idx_nfc_tags_user_id ON nfc_tags(user_id);
+  `,
+  // 7: los eventos creados con el formulario antiguo tenían como id `Date.now()` (p. ej.
+  // "1794413030068"). Supabase exige UUID, así que su subida fallaba y bloqueaba la cola de
+  // sincronización. Cada id no válido pasa a un UUID v4 nuevo y queda pendiente de subir; las
+  // tablas que guardan el id del evento se actualizan antes de borrar la fila antigua.
+  // `xp_transactions` no se toca: es append-only (Spec 04).
+  `
+    CREATE TEMP TABLE evento_id_map AS
+      SELECT id AS old_id, ${SQLITE_UUID_V4} AS new_id
+      FROM eventos
+      WHERE NOT (${isSqliteUuid('id')});
+
+    INSERT INTO eventos (
+      id, titulo, fecha_inicio, fecha_fin, ubicacion, descripcion, updated_at, deleted_at, sync_status
+    )
+    SELECT map.new_id, e.titulo, e.fecha_inicio, e.fecha_fin, e.ubicacion, e.descripcion,
+           strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), e.deleted_at, 'pending'
+    FROM eventos AS e JOIN evento_id_map AS map ON map.old_id = e.id;
+
+    ${EVENT_ID_REFERENCES.map(
+      ([table, column]) => `UPDATE ${table}
+      SET ${column} = (SELECT new_id FROM evento_id_map WHERE old_id = ${table}.${column})
+      WHERE ${column} IN (SELECT old_id FROM evento_id_map);`,
+    ).join('\n    ')}
+
+    DELETE FROM eventos WHERE id IN (SELECT old_id FROM evento_id_map);
+    DROP TABLE evento_id_map;
   `,
 ];
 

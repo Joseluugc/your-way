@@ -13,7 +13,7 @@ const USER_ROLES: readonly UserRole[] = ['ATTENDEE', 'VIP', 'STAFF', 'EXHIBITOR'
 
 export class SupabaseMapDataSource implements MapRemoteDataSource {
   async fetchSnapshot(): Promise<RemoteMapSnapshot> {
-    await ensureSession();
+    await requireSession();
     const [standRows, zoneRows, accessLogRows] = await Promise.all([
       fetchTableRows('stands', 'id, name, owner_id, map_x, map_y, evento_id, zone_id'),
       fetchTableRows('zones', 'id, name, max_capacity, current_capacity, required_role'),
@@ -41,7 +41,7 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
       return;
     }
 
-    await ensureSession();
+    await requireSession();
     const rows = stands.map(({ id, name, owner_id, map_x, map_y, evento_id, zone_id }) => ({
       id,
       name,
@@ -55,6 +55,17 @@ export class SupabaseMapDataSource implements MapRemoteDataSource {
     if (error) {
       throw new Error(`No se pudieron sincronizar los estands pendientes: ${error.message}`);
     }
+  }
+}
+
+/**
+ * Salvaguarda: sin sesión se lanza en vez de seguir. Si `upsertStands` no hiciera nada en silencio,
+ * `syncMapAndOccupancy` marcaría los estands como sincronizados. `useMapData` comprueba la sesión
+ * antes y, sin ella, no llama a este adaptador.
+ */
+async function requireSession(): Promise<void> {
+  if (!(await ensureSession())) {
+    throw new Error('No hay sesión de Supabase: inicia sesión para sincronizar el mapa.');
   }
 }
 

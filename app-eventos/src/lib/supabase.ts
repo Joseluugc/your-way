@@ -20,14 +20,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 /**
- * Garantiza una sesión de Supabase para que RLS permita escribir (rol `authenticated`).
- * Reutiliza la sesión guardada; si no hay, inicia una sesión anónima.
+ * ¿Hay una sesión de Supabase utilizable para que RLS permita leer y escribir (`authenticated`)?
+ * Reutiliza la sesión guardada y la renueva si el token ha caducado. Nunca lanza: sin sesión
+ * (no se ha iniciado sesión, o el token caducó y no se pudo renovar sin red) devuelve `false`
+ * y la sincronización se omite. Ya no hay sesiones anónimas (Spec 08).
  */
-export async function ensureSession(): Promise<void> {
+export async function ensureSession(): Promise<boolean> {
   const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (data.session) return;
-
-  const { error: signInError } = await supabase.auth.signInAnonymously();
-  if (signInError) throw signInError;
+  return !error && data.session !== null;
 }

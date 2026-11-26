@@ -2,7 +2,8 @@
  * Doble de prueba de `src/lib/supabase` para la cola de sincronización: imita la tabla
  * `eventos` de Supabase en memoria, sin red real.
  *
- * - `online = false`: `ensureSession` y las consultas fallan como sin conexión.
+ * - `online = false`: las consultas fallan como sin conexión (la sesión guardada sigue).
+ * - `hasSession = false`: no hay sesión iniciada; `ensureSession` devuelve `false` (Spec 08).
  * - `failNextUpsert()`: la siguiente subida falla (corte de red a mitad de sincronización).
  * - El "servidor" asigna `updated_at` con su propio reloj, como el trigger de Supabase,
  *   e ignora el que envíe el cliente.
@@ -12,6 +13,7 @@ type Result = { data: Row[] | null; error: Error | null };
 
 class FakeEventosRemote {
   online = true;
+  hasSession = true;
   readonly rows = new Map<string, Row>();
   readonly upserts: Record<string, unknown>[][] = [];
   private shouldFailUpsert = false;
@@ -19,6 +21,7 @@ class FakeEventosRemote {
 
   reset(): void {
     this.online = true;
+    this.hasSession = true;
     this.shouldFailUpsert = false;
     this.rows.clear();
     this.upserts.length = 0;
@@ -104,9 +107,7 @@ class QueryBuilder implements PromiseLike<Result> {
 
 /** Sustituto del módulo `src/lib/supabase` (se usa con `jest.mock`). */
 export const fakeSupabaseModule = {
-  ensureSession: async (): Promise<void> => {
-    if (!mockEventosRemote.online) throw new Error('Network request failed');
-  },
+  ensureSession: async (): Promise<boolean> => mockEventosRemote.hasSession,
   supabase: {
     from: (table: string) => {
       if (table !== 'eventos') throw new Error(`Tabla no simulada: ${table}`);

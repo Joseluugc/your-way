@@ -1,7 +1,8 @@
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { initializeAppDatabase } from '../database/initializeDatabase';
+import { AuthProvider, useAuth } from '../providers/AuthProvider';
 import { GamificationProvider } from '../providers/GamificationProvider';
 import { NotificationProvider } from '../providers/NotificationProvider';
 import { SyncProvider } from '../providers/SyncProvider';
@@ -13,28 +14,32 @@ export default function RootLayout() {
       onInit={initializeAppDatabase}
       options={{ enableChangeListener: true }}
     >
-      <SyncProvider>
-        <GamificationProvider>
-          <NotificationProvider>
-            <StatusBar style="auto" />
-            <Tabs
-              screenOptions={{
-                headerShown: false,
-                tabBarActiveTintColor: '#13695F',
-                tabBarInactiveTintColor: '#5A6A64',
-              }}
-            >
-              <Tabs.Screen name="index" options={{ title: 'Resumen', tabBarLabel: 'Resumen' }} />
-              <Tabs.Screen name="mapa" options={{ title: 'Mapa', tabBarLabel: 'Mapa' }} />
-              {/* Prueba de concepto NFC (Spec 02): solo visible en desarrollo. */}
-              <Tabs.Screen
-                name="nfc"
-                options={{ title: 'NFC', tabBarLabel: 'NFC', href: __DEV__ ? undefined : null }}
-              />
-            </Tabs>
-          </NotificationProvider>
-        </GamificationProvider>
-      </SyncProvider>
+      <AuthProvider>
+        <SyncProvider>
+          <GamificationProvider>
+            <NotificationProvider>
+              <StatusBar style="auto" />
+              <RootNavigator />
+            </NotificationProvider>
+          </GamificationProvider>
+        </SyncProvider>
+      </AuthProvider>
     </SQLiteProvider>
+  );
+}
+
+/** Sin sesión solo existe `login`; con sesión, solo las pestañas (Spec 08, US-08.1). */
+function RootNavigator() {
+  const { estado } = useAuth();
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Protected guard={estado === 'con-sesion'}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+      <Stack.Protected guard={estado === 'sin-sesion'}>
+        <Stack.Screen name="login" />
+      </Stack.Protected>
+    </Stack>
   );
 }

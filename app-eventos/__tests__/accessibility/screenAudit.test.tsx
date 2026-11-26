@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import IndexRoute from '../../src/app/index';
-import MapaRoute from '../../src/app/mapa';
+import IndexRoute from '../../src/app/(tabs)/index';
+import MapaRoute from '../../src/app/(tabs)/mapa';
 import CreateEventScreen from '../../src/screens/CreateEventScreen';
 import { createAppDatabase } from '../helpers/appDatabase';
 import {

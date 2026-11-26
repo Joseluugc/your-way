@@ -58,6 +58,21 @@ describe('[US-07.1] [US-07.2] [US-07.3] cola de sincronización offline → onli
     expect(mockEventosRemote.rows.size).toBe(0);
   });
 
+  it('[US-08.2] sin sesión la sincronización se omite sin error y el evento sigue pending', async () => {
+    mockEventosRemote.hasSession = false;
+    await insertEvent(temp.database, EVENTO);
+
+    await expect(syncEventos(temp.database)).resolves.toBeUndefined();
+
+    expect(localRow(EVENTO.id)?.sync_status).toBe('pending');
+    expect(mockEventosRemote.upserts).toEqual([]);
+
+    // Tras iniciar sesión se sube lo pendiente.
+    mockEventosRemote.hasSession = true;
+    await syncEventos(temp.database);
+    expect(localRow(EVENTO.id)?.sync_status).toBe('synced');
+  });
+
   it('[US-07.1] tras una subida correcta el evento pasa a synced', async () => {
     await insertEvent(temp.database, EVENTO);
 

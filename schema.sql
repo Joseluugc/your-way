@@ -1,5 +1,5 @@
 -- Esquema base de la base central (Supabase / PostgreSQL).
--- Refleja el resultado de aplicar supabase/migrations/0001, 0002 y 0003 sobre el esquema inicial.
+-- Refleja el resultado de aplicar supabase/migrations/0001 a 0004 sobre el esquema inicial.
 -- Datos de la demo: supabase/seed.sql.
 
 -- Extensión usada por el valor por defecto de `eventos.id`.
@@ -130,6 +130,7 @@ CREATE TABLE eventos (
     fecha_fin TIMESTAMPTZ NOT NULL,
     ubicacion VARCHAR(255) NOT NULL,
     descripcion TEXT,
+    codigo VARCHAR(12) UNIQUE,  -- Spec 08: código para unirse (NULL = sin código)
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at TIMESTAMPTZ,
     CONSTRAINT eventos_rango_fechas CHECK (fecha_fin > fecha_inicio)
@@ -339,3 +340,85 @@ CREATE POLICY roulette_spins_insert ON roulette_spins FOR INSERT TO authenticate
 CREATE POLICY roulette_spins_update ON roulette_spins FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY gamification_config_select ON gamification_config FOR SELECT TO authenticated USING (true);
 CREATE POLICY gamification_config_insert ON gamification_config FOR INSERT TO authenticated WITH CHECK (true);
+
+-- 12. Autenticación y roles (Spec 08, 0004_auth_roles.sql)
+-- Cada cuenta de Supabase Auth tiene su fila en `users` (users.id = auth.uid()).
+CREATE TABLE evento_miembros (
+    evento_id  UUID NOT NULL REFERENCES eventos(id),
+    user_id    UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
+    PRIMARY KEY (evento_id, user_id)
+);
+
+CREATE TRIGGER trg_evento_miembros_updated_at
+BEFORE INSERT OR UPDATE ON evento_miembros
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_evento_miembros_updated_at ON evento_miembros (updated_at);
+CREATE INDEX idx_evento_miembros_user_id ON evento_miembros (user_id);
+
+CREATE FUNCTION is_staff() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users
+    WHERE id = auth.uid() AND role = 'STAFF' AND deleted_at IS NULL
+  );
+$$;
+
+-- Registro: fila de `users` con rol fijo ATTENDEE.
+CREATE FUNCTION handle_new_user() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO users (id, name, email, role)
+  VALUES (
+    NEW.id,
+    COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'name'), ''), split_part(NEW.email, '@', 1)),
+    NEW.email,
+    'ATTENDEE'
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- Solo un STAFF cambia `role` desde la API (el panel y el SQL Editor no se ven afectados).
+CREATE FUNCTION proteger_role() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role
+     AND current_user IN ('authenticated', 'anon')
+     AND NOT is_staff() THEN
+    RAISE EXCEPTION 'Solo un STAFF puede cambiar el rol de un usuario'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_users_proteger_role
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION proteger_role();
+
+-- RLS de `users`: SELECT para authenticated (bucle de arriba); UPDATE de la propia fila o STAFF;
+-- sin INSERT desde el cliente (lo hace handle_new_user) y sin DELETE.
+DROP POLICY users_insert ON users;
+DROP POLICY users_update ON users;
+CREATE POLICY users_update ON users FOR UPDATE TO authenticated
+  USING (id = auth.uid() OR is_staff())
+  WITH CHECK (id = auth.uid() OR is_staff());
+
+-- RLS de `evento_miembros`: filas propias o STAFF; escritura solo STAFF; sin DELETE.
+ALTER TABLE evento_miembros ENABLE ROW LEVEL SECURITY;
+CREATE POLICY evento_miembros_select ON evento_miembros FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR is_staff());
+CREATE POLICY evento_miembros_insert ON evento_miembros FOR INSERT TO authenticated
+  WITH CHECK (is_staff());
+CREATE POLICY evento_miembros_update ON evento_miembros FOR UPDATE TO authenticated
+  USING (is_staff())
+  WITH CHECK (is_staff());

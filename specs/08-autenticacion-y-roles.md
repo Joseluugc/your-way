@@ -3,7 +3,7 @@
 **Owner:** @joseluu.gc
 **Rama:** `Joselu`
 **Issue:** TASK-17 (#26) · Prioridad Crítica · 2 puntos
-**Estado:** 📝 Borrador
+**Estado:** 📝 Aprobado
 **Depende de:** Spec 07 (sincronización y sesión de Supabase), Spec 06 (base central, seed y RLS) y TASK-15 (IDs UUID en SQLite)
 **Desbloquea:** TASK-18 (#27, AuthProvider y login), TASK-19 (#28, navegación por rol)
 **Fecha:** 2026-11-26

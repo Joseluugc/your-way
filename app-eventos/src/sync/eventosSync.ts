@@ -18,7 +18,7 @@ let rerun = false;
 /**
  * Sincroniza `eventos` con Supabase: sesión, subida de pendientes y bajada incremental.
  * Solo hay una ejecución a la vez; si se pide otra mientras corre, se repite al terminar.
- * Si falla, las filas locales siguen `pending` y el error se propaga.
+ * Sin sesión se omite sin error. Si falla, las filas locales siguen `pending` y el error se propaga.
  */
 export function syncEventos(db: SQLiteDatabase): Promise<void> {
   if (running) {
@@ -30,7 +30,8 @@ export function syncEventos(db: SQLiteDatabase): Promise<void> {
     try {
       do {
         rerun = false;
-        await ensureSession();
+        // Sin sesión (Spec 08) no se sube ni se baja nada: las filas siguen `pending`.
+        if (!(await ensureSession())) return;
         await uploadPending(db);
         await downloadChanges(db);
       } while (rerun);

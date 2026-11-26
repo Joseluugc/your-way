@@ -264,9 +264,31 @@ test('[US-06.1] cargar el seed local dos veces no duplica filas', async () => {
   }
 });
 
-test('[US-06.1] seed.sql es idempotente: cada INSERT usa ON CONFLICT (id) DO NOTHING', () => {
+test('[US-06.1] [US-08.1] seed.sql es idempotente: cada INSERT usa ON CONFLICT (...) DO NOTHING', () => {
   const inserts = SEED_SQL.match(/^INSERT INTO /gm) ?? [];
-  const guarded = SEED_SQL.match(/^ON CONFLICT \(id\) DO NOTHING;$/gm) ?? [];
-  assert.equal(inserts.length, 5);
+  const guarded = SEED_SQL.match(/^ON CONFLICT \([^)]+\) DO NOTHING;$/gm) ?? [];
+  assert.equal(inserts.length, 6);
   assert.equal(guarded.length, inserts.length);
+});
+
+test('[US-08.1] el evento demo tiene código YWDEMO y Elena (STAFF) y Ana (ATTENDEE) son miembros', () => {
+  assert.match(
+    SEED_SQL,
+    new RegExp(`^UPDATE eventos SET codigo = 'YWDEMO' WHERE id = '${DEMO_EVENTO.id}';$`, 'm'),
+  );
+
+  const bloque = /INSERT INTO evento_miembros \(evento_id, user_id\) VALUES\n([\s\S]*?)\nON CONFLICT/.exec(
+    SEED_SQL,
+  );
+  assert.ok(bloque, 'falta el INSERT de evento_miembros en seed.sql');
+  const miembros = bloque[1].split('\n').map(parseTuple);
+  const usuario = (id) => DEMO_USERS.find((user) => user.id === id);
+
+  assert.deepEqual(
+    miembros.map(([eventoId, userId]) => [eventoId, usuario(userId)?.name, usuario(userId)?.role]),
+    [
+      [DEMO_EVENTO.id, 'Elena Navarro', 'STAFF'],
+      [DEMO_EVENTO.id, 'Ana Gómez', 'ATTENDEE'],
+    ],
+  );
 });

@@ -1,1 +1,1 @@
-export { default } from '../../screens/ProximamenteScreen';
+export { default } from '../../screens/PassportScreen';

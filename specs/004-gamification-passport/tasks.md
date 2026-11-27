@@ -26,6 +26,45 @@ description: "Lista de tareas de implementación: Motor de Gamificación, Pasapo
 - Los tests viven en `tests/*.test.mjs` (el glob de `test:domain` no entra en subcarpetas) y reutilizan el arnés `openDatabase` de `tests/mapOfflineSync.test.mjs` (adaptador `node:sqlite` `DatabaseSync` → API de `expo-sqlite`).
 - Código, comentarios y UI en español; TS `strict` sin `any`. Commits: `implementar X [US-04.N]`.
 
+> **Nota de rutas (2026-11-27):** la Fase 1–2 se implementó con la estructura plana del proyecto, no con `src/modules/gamification/`. Equivalencias: `domain/**` → `src/domain/gamification/`, `application/**` → `src/domain/gamification/` (puertos en `ports.ts`), `infrastructure/sqlite/SqliteGamificationRepository.ts` → `src/database/GamificationRepository.ts`, `infrastructure/systemAdapters.ts` → `src/lib/systemAdapters.ts`, `src/shared/events/eventBus.ts` → `src/domain/events/eventBus.ts`, `presentation/screens` → `src/screens/`, `presentation/components` → `src/components/`, `presentation/hooks` → `src/hooks/`. Las tareas antiguas conservan las rutas originales: aplicar esta tabla al implementarlas.
+
+---
+
+## Mis issues (Samu)
+
+Solo estas tareas salen de las issues de GitHub asignadas. El resto del fichero queda en «Fuera de mis issues».
+
+### TASK-09 (#9): Spec 04 - Requisitos de Gamificación y Feedback
+
+- [X] Redactar la Spec 04: `specs/04-gamificacion-pasaporte.md` y `specs/004-gamification-passport/` (spec, plan, research, data-model, contracts, quickstart y este `tasks.md`). Falta cerrar la issue en GitHub.
+
+### TASK-10 (#10): UI del Pasaporte Digital de Sellos
+
+La define `specs/09-pasaporte-digital-sellos-ui.md` (plan de implementación de 7 pasos y criterios de aceptación). Se implementa con `/spec-impl 09-pasaporte-digital-sellos-ui`. Sustituye a la antigua T032.
+
+- [X] S09 Implementar la Spec 09: view model y mock en `src/domain/gamification/`, componentes en `src/components/`, `src/screens/PassportScreen.tsx` y la ruta `src/app/(tabs)/pasaporte.tsx`
+
+### TASK-23 (#32): Dominio del Pasaporte y Repositorio de Valoraciones
+
+**Depende de:** TASK-15 (IDs UUID en SQLite) y TASK-09.
+
+**Esquema:** la issue cita `ratings.score` y `sync_status = 'pending'`, que son del esquema antiguo. Se trabaja sobre `stand_ratings` (migración nº 4): `score` equivale a `stars` y «pendiente» equivale a `synced = 0`. `stand_ratings` ya tiene `UNIQUE(user_id, stand_id)`, así que la regla es **una valoración por estand** (Spec 04, FR-005), inmutable.
+
+**Umbral de recompensa:** `DEFAULT_SPIN_EVERY_N_STAMPS = 3` de `src/domain/gamification/types.ts` (Spec 04, US-04.3: una tirada de ruleta cada 3 sellos), o `gamification_config.spin_every_n_stamps` si el evento lo configura.
+
+- [ ] T079 [P] [TASK-23] Tests de dominio en `tests/gamificationPassport.test.mjs`: `computePassport` (0 estands → 0 %; 3 de 8 sellados → 3 sellados, 5 pendientes y 38 %; sellos de otro evento ignorados), umbral de recompensa (2 sellos → no desbloqueada, 3 → sí, 6 → 2 recompensas ganadas, `spinEveryN` configurable), `validateStars` (acepta 1..5 enteros y rechaza 0, 6 y 3.5) y `assertCanRate` (sin sello → `STAND_NOT_STAMPED`, con valoración previa → `ALREADY_RATED`). Deben fallar antes de T020 y T080
+- [ ] T020 [P] [TASK-23] Implementar `src/domain/gamification/rating.ts`: `validateStars(n): n is 1|2|3|4|5` y `assertCanRate(stamp | null, existingRating | null)` (sin sello → error `STAND_NOT_STAMPED`; con valoración previa → `ALREADY_RATED`). Movida aquí desde la Fase 3
+- [ ] T080 [P] [TASK-23] Implementar `src/domain/gamification/passport.ts`, sin imports de React Native ni Expo: `computePassport({ stands, stamps, ratings, spinEveryN })` devuelve los estands sellados y pendientes del usuario, `{ conseguidos, total, porcentaje }` (reutiliza `calcularProgreso` de `src/domain/gamification/passportView.ts`, Spec 09), `recompensasGanadas = Math.floor(conseguidos / spinEveryN)`, `recompensaDesbloqueada = recompensasGanadas > 0` y los estands sellados sin valorar. Incluye `toPassportViewData(...)`, que produce el `PassportViewData` de la Spec 09 (depende de S09)
+- [ ] T081 [TASK-23] Crear `src/database/RatingRepository.ts` sobre `stand_ratings` (import solo de tipo de `expo-sqlite`): `rateStand({ userId, standId, stars })` genera el id con `cryptoIds` de `src/lib/systemAdapters.ts` (UUID v4), valida con `validateStars` y `assertCanRate` (lee el sello de `user_stamps` y la valoración previa) e inserta con `synced = 0`; además `getRating(userId, standId)` y `listRatings(userId, eventoId)`. `GamificationRepository.ts` delega en él sus métodos de valoración para no duplicar SQL (depende de T020)
+- [ ] T082 [P] [TASK-23] Test de integración en `tests/ratingRepository.test.mjs` con `tests/sqliteHarness.mjs`: valorar un estand sellado guarda 1 fila con id UUID v4, `stars` 1..5 y `synced = 0`; `stars = 0` o `6` lanza un error y no inserta; valorar sin sello lanza `STAND_NOT_STAMPED`; una segunda valoración lanza `ALREADY_RATED` y deja 1 sola fila
+- [ ] T083 [TASK-23] Ejecutar desde `app-eventos/` `npm run lint`, `npx tsc --noEmit` y `npm run test:domain` en verde (depende de T079–T082)
+
+---
+
+# Fuera de mis issues
+
+Lo que sigue no lo piden mis issues de GitHub. Se conserva sin cambios como referencia del diseño completo de la Spec 04 (otro integrante o un sprint futuro).
+
 ---
 
 ## Phase 1: Setup (infraestructura compartida)
@@ -81,7 +120,7 @@ description: "Lista de tareas de implementación: Motor de Gamificación, Pasapo
 ### Implementation for User Story 1
 
 - [ ] T019 [P] [US1] Implementar `src/modules/gamification/domain/trivia/trivia.ts`: `TRIVIA_TIME_LIMIT_MS = 15_000`, `validateTrivia(trivia)` y `evaluateTriviaAnswer(trivia, selectedIndex | null, elapsedMs): 'CORRECT' | 'WRONG' | 'TIMEOUT'`
-- [ ] T020 [P] [US1] Implementar `src/modules/gamification/domain/rating/rating.ts`: `validateStars(n): n is 1|2|3|4|5` y `assertCanRate(stamp | null, existingRating | null)` (sin sello → error `STAND_NOT_STAMPED`; con valoración previa → `ALREADY_RATED`)
+- T020 movida a «Mis issues» (TASK-23).
 - [ ] T021 [P] [US1] Implementar `src/modules/gamification/domain/stamp/stamp.ts`: `decideScan(stand | null, existingStamp | null): 'UNKNOWN_STAND' | 'ALREADY_VISITED' | 'NEW_STAMP'` y `createStamp({ id, userId, stand, scannedAt, zoneLevel, multiplier, hasTrivia })`, que deja `trivia_result = 'PENDING'` o `'SKIPPED'`
 - [ ] T022 [P] [US1] Implementar `src/modules/gamification/domain/xp/multiplier.ts` con `computeMultiplier({ zoneLevel: OccupancyLevel | null, personalBoost: boolean })` devolviendo de momento siempre 1.0 (US2 y US3 lo amplían; dejar la firma definitiva según research.md R11)
 - [ ] T023 [US1] Implementar el caso de uso `src/modules/gamification/application/useCases/handleStandScanned.ts`: en una sola `withTransaction`, aplicar `decideScan`, crear el sello y la transacción `STAMP` (`reference_id = stamp.id`, multiplicador de `computeMultiplier`) y devolver el resultado discriminado de contracts/domain-events.md (`NEW_STAMP` con `trivia` / `ALREADY_VISITED` con `rating` / `UNKNOWN_STAND`); después del commit, publicar `HapticFeedbackRequested{STAMP_SUCCESS}` (depende de T014, T021, T022)
@@ -91,9 +130,8 @@ description: "Lista de tareas de implementación: Motor de Gamificación, Pasapo
 - [ ] T027 [P] [US1] Crear el simulador de dev en `src/modules/gamification/infrastructure/events/devSimulators.ts`: `simulateStandScan(bus, { userId, standId })` y `simulateWristbandWritten(bus, { userId, eventoId })` con `tagUid`/`wristbandUid` ficticios; solo se usa con `__DEV__`
 - [ ] T028 [US1] Implementar el hook `src/modules/gamification/presentation/hooks/useStampFlow.ts`: se suscribe a `StampFlowRequested` y expone `{ step: 'idle' | 'trivia' | 'rating' | 'alreadyVisited' | 'unknown' | 'done', stamp, trivia, xpGained, answer(index | null, elapsedMs), rate(stars), skipRating(), close() }`
 - [ ] T029 [P] [US1] Crear `src/modules/gamification/presentation/components/TriviaCountdown.tsx`: cuenta atrás de 15 s con barra y texto accesible (`accessibilityLiveRegion`); llama a `onTimeout` al llegar a 0
-- [ ] T030 [US1] Crear `src/modules/gamification/presentation/components/StampFlowModal.tsx`: modal con confirmación de sello (+XP), pregunta con 3 botones y `TriviaCountdown`, feedback de acierto o fallo, selector de 1–5 estrellas con etiquetas accesibles, opción «Valorar más tarde» y la vista «Ya visitado» con la valoración previa (depende de T028, T029)
-- [ ] T031 [US1] Implementar `src/modules/gamification/presentation/hooks/usePassport.ts`: sellos del asistente con nombre del estand, total de XP (`sumXp`), estands pendientes de valorar y `rateLater(standId, stars)`; se refresca con los eventos del módulo
-- [ ] T032 [US1] Crear `src/modules/gamification/presentation/screens/PassportScreen.tsx` (cabecera con XP total, cuadrícula de sellos, lista «Pendientes de valorar», `StampFlowModal` montado y, con `__DEV__`, un panel de simulación con un selector de estand que usa `devSimulators`) y la ruta `src/app/pasaporte.tsx` que solo lo reexporta; añadir `<Tabs.Screen name="pasaporte" options={{ title: 'Pasaporte', tabBarLabel: 'Pasaporte' }} />` en `src/app/_layout.tsx` (depende de T030, T031)
+- [ ] T030 [US1] Crear `src/modules/gamification/presentation/components/StampFlowModal.tsx`: modal con confirmación de sello (+XP), pregunta con 3 botones y `TriviaCountdown`, feedback de acierto o fallo, selector de 1–5 estrellas con etiquetas accesibles, opción «Valorar más tarde» y la vista «Ya visitado» con la valoración previa; montarlo en `PassportScreen.tsx` (Spec 09) junto a un panel `__DEV__` de simulación con un selector de estand que usa `devSimulators` (depende de T027, T028, T029 y Spec 09)
+- [ ] T031 [US1] Implementar `src/modules/gamification/presentation/hooks/usePassport.ts`: sellos del asistente con nombre del estand, total de XP (`sumXp`), estands pendientes de valorar y `rateLater(standId, stars)`; se refresca con los eventos del módulo. Devuelve `PassportViewData` (`src/domain/gamification/passportView.ts`, Spec 09) usando `toPassportViewData` (T080), sustituye al mock en `PassportScreen.tsx` y añade la sección «Pendientes de valorar» (depende de Spec 09)
 - [ ] T033 [US1] Migrar `src/database/OrganizerDashboardRepository.ts` para leer `user_stamps` y `stand_ratings` (`AVG(stars)`, `COUNT(stars)`) en lugar de `stamps`/`ratings`, y `seedDevData` en `src/database/initializeDatabase.ts` para insertar en las tablas nuevas; añadir al seed una `stand_trivia` por estand mock (depende de T011)
 
 **Checkpoint**: US1 funciona sola en modo avión (quickstart.md escenarios 2–4).
@@ -122,7 +160,7 @@ description: "Lista de tareas de implementación: Motor de Gamificación, Pasapo
 - [ ] T042 [US2] Suscribir `AttendeeWristbandWritten → assignFaction` y `ZoneOccupancyChanged → handleZoneOccupancyChanged` en `registerGamificationModule.ts` (depende de T040)
 - [ ] T043 [P] [US2] Productor provisional de `ZoneOccupancyChanged` en `src/modules/gamification/infrastructure/events/zoneOccupancyBridge.ts`: `publishZoneLevelChanges(bus, previous: ZoneOccupancy[], next: ZoneOccupancy[])`, que compara `level` por zona y publica solo los cambios. Llamarlo desde `src/hooks/useMapData.ts` cada vez que llega un snapshot nuevo, guardando el anterior en un `useRef` (coordinar con Rafa: es el punto de integración de contracts/domain-events.md)
 - [ ] T044 [P] [US2] Consumidor provisional de `FlashMissionAlertRequested` en `src/providers/NotificationProvider.tsx`: suscribirse vía `useGamification().bus` y mostrar una notificación local «⚡ Misión Relámpago: la zona {zoneName} está tranquila, ¡sellos ×2!», guardándola como `CAPACITY_ALERT` con `related_zone_id` (deduplicar por `alertId`; coordinar con Rafa)
-- [ ] T045 [US2] Mostrar la facción (nombre y color) y una insignia «×2 activo» por zona en `PassportScreen.tsx`, y en `StampFlowModal.tsx` mostrar el multiplicador aplicado; añadir «Grabar pulsera» al panel de dev (depende de T032, T041)
+- [ ] T045 [US2] Mostrar la facción (nombre y color) y una insignia «×2 activo» por zona en `PassportScreen.tsx`, y en `StampFlowModal.tsx` mostrar el multiplicador aplicado; añadir «Grabar pulsera» al panel de dev (depende de Spec 09 (TASK-10), T030, T041)
 
 **Checkpoint**: US1 y US2 funcionan juntas y por separado.
 
